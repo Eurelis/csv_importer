@@ -34,31 +34,14 @@ namespace Drupal\csv_importer {
     $cache = Drupal::cache();
 
     /* @var $database Connection */
-    $database = Drupal::database();
+    // $database = Drupal::database();
 
     try {
-      // Collection of all YAML structure files locations to cache
-      $ymlLocationsToCheck = [];
 
       // Default structure file of CSV Importer module
-      $ymlLocationsToCheck['csv_importer'] = Drupal::config('csv_importer.csvimporterconfig')->get('yml_location');
+      $ymlLocation = Drupal::config('csv_importer.structureconfig')->get('yml_location');
 
-      // Structure files from other dependent modules
-      $results = $database
-              ->select('csv_importer_structure_files_locations', 'loc')
-              ->fields('loc', ['module_name', 'file_location'])
-              ->execute()->fetchAll();
 
-      foreach ($results as $r) {
-        $ymlLocationsToCheck[$r->module_name] = $r->file_location;
-      }
-
-      // Collection of all YAML structure files to put in cache
-      $ymlStructures = [];
-
-      foreach ($ymlLocationsToCheck as $moduleName => $ymlLocation) {
-        // $MODULE_PATH alias
-        $ymlLocation = str_replace('$MODULE_PATH', drupal_get_path('module', $moduleName), $ymlLocation);
 
         // Parse YAML file!
         $structure = Yaml::parse(file_get_contents($ymlLocation));
@@ -72,16 +55,15 @@ namespace Drupal\csv_importer {
           return null;
         }
 
-        // The structure array is OK
-        $ymlStructures[$moduleName] = $structure;
-      }
+
+
 
       // Put full structure in cache
-      $cache->set('csv_importer_ymlFromCache', $ymlStructures);
+      $cache->set('csv_importer_ymlFromCache',  $structure);
 
       drupal_set_message(t('CSV Importer: The structure YAML cache has been refreshed successfully.'));
 
-      return $ymlStructures;
+      return $structure;
     }
     catch (ParseException $e) {
       flushYmlCache();
