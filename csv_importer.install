@@ -1,73 +1,46 @@
 <?php
 
-use Drupal\Core\Database\Database;
+function csv_importer_schema() {
 
-function csv_importer_schema () {
-	
-	$schema['commandes'] = array(
-		
-		'description' => 'Les commandes',
-		'fields' => array(
-			'cid' => array(
-				'description' => 'Primary Key: Commandes unique ID.',
-				'type'        => 'serial',
-				'unsigned'    => TRUE,
-				'not null'    => TRUE,
-			),
-			
-			'prix' => array(
-				'description' => 'montant.',
-				'type'        => 'float',
-				'unsigned'    => TRUE,
-				'not null'    => TRUE,
-			),
-			
-			'date' => array(
-				'description' => 'Date textuelle',
-				'type' => 'varchar',
-				'length' => 255,
-				'not null' => TRUE,
-				'default' => '',
-			),
-			'nom' => array(
-				'description' => 'nom',
-				'type' => 'varchar',
-				'length' => 255,
-				'not null' => TRUE,
-				'default' => '',
-			),
-			'prenom' => array(
-				'description' => 'prenom',
-				'type' => 'varchar',
-				'length' => 255,
-				'not null' => TRUE,
-				'default' => '',
-			),
-		),
-		
-		'primary key' => array('cid'),
-
-	);
-  
-  // Stores locations of YAML structure files
-  $schema['csv_importer_structure_files_locations'] = [
-    'description' => 'Stores YAML structure files locations.',
-    'fields' => [
-      'module_name' => [
-        'description' => 'Module name that added this entry.',
-        'type' => 'varchar',
-        'length' => DRUPAL_EXTENSION_NAME_MAX_LENGTH,
+  $schema['commandes'] = array(
+    'description' => 'Les commandes',
+    'fields' => array(
+      'cid' => array(
+        'description' => 'Primary Key: Commandes unique ID.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
         'not null' => TRUE,
-      ],
-      'file_location' => [
-        'description' => 'Structure file location.',
+      ),
+      'prix' => array(
+        'description' => 'montant.',
+        'type' => 'float',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'date' => array(
+        'description' => 'Date textuelle',
         'type' => 'varchar',
         'length' => 255,
         'not null' => TRUE,
-      ],
-    ],
-    'primary key' => ['module_name'],
-  ];
-  
-	return $schema;
+        'default' => '',
+      ),
+      'nom' => array(
+        'description' => 'nom',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'prenom' => array(
+        'description' => 'prenom',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'primary key' => array('cid'),
+  );
+
+  return $schema;
 }

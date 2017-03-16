@@ -4,7 +4,6 @@ namespace Drupal\csv_importer {
 
   use Drupal;
   use Drupal\Core\Cache\CacheBackendInterface;
-  use Drupal\Core\Database\Connection;
   use Symfony\Component\Yaml\Exception\ParseException;
   use Symfony\Component\Yaml\Yaml;
 
@@ -33,33 +32,24 @@ namespace Drupal\csv_importer {
     /* @var $cache CacheBackendInterface */
     $cache = Drupal::cache();
 
-    /* @var $database Connection */
-    // $database = Drupal::database();
-
     try {
-
-      // Default structure file of CSV Importer module
+      // Structure file location
       $ymlLocation = Drupal::config('csv_importer.structureconfig')->get('yml_location');
 
+      // Parse YAML file!
+      $structure = Yaml::parse(file_get_contents($ymlLocation));
 
+      if ($structure == null) {
+        // Yaml::parse(...) returns null if the file does not exist
+        flushYmlCache();
 
-        // Parse YAML file!
-        $structure = Yaml::parse(file_get_contents($ymlLocation));
+        drupal_set_message(t('Failed to parse structure YAML file from this location: @ymlLocation . Please put the file at this location or change the file location.', ['@ymlLocation' => $ymlLocation]), 'warning');
 
-        if ($structure == null) {
-          // Yaml::parse(...) returns null if the file does not exist
-          flushYmlCache();
-
-          drupal_set_message(t('Failed to parse structure YAML file from this location: @ymlLocation . Please put the file at this location or change the file location.', ['@ymlLocation' => $ymlLocation]), 'warning');
-
-          return null;
-        }
-
-
-
+        return null;
+      }
 
       // Put full structure in cache
-      $cache->set('csv_importer_ymlFromCache',  $structure);
+      $cache->set('csv_importer_ymlFromCache', $structure);
 
       drupal_set_message(t('CSV Importer: The structure YAML cache has been refreshed successfully.'));
 
@@ -98,82 +88,6 @@ namespace Drupal\csv_importer {
     }
 
     return false;
-  }
-
-  /**
-   * Adds a YAML structure file location from another module.
-   * The cache is rebuilt upon this function's call.
-   * 
-   * @param string $moduleName The module name. A module can only register a single structure file.
-   * @param string $location The YAML file location, relative to the base location of the module which holds it. Usually: $MODULE_PATH/structure.yml
-   */
-  function addStructureYmlLocation($moduleName, $location) {
-    // Prevent non string values
-    if (!is_string($moduleName) || !is_string($location)) {
-      drupal_set_message(t('Couldn\'t register a structure YAML location. Non-string argument passed.'), 'error');
-
-      return;
-    }
-
-    // Prevent empty values
-    if (empty($moduleName) || empty($location)) {
-      drupal_set_message(
-          t('Couldn\'t register a structure YAML location. Module name: "@moduleName" Location: "@location".', 'error')
-          , ['@moduleName' => $moduleName, '@location' => $location]
-          , 'error'
-      );
-
-      return;
-    }
-
-    /* @var $database Connection */
-    $database = Drupal::database();
-
-    $database
-        ->upsert('csv_importer_structure_files_locations')
-        ->key('module_name')
-        ->fields(['module_name', 'file_location'], [$moduleName, $location])
-        ->execute();
-
-    // Refresh the structure cache
-    refreshYmlFromCache();
-  }
-
-  /**
-   * Removes a YAML structure file.
-   * The cache is rebuilt upon this function's call.
-   * 
-   * @param string $moduleName The name of the module which holds the structure file.
-   */
-  function removeStructureYmlLocation($moduleName) {
-    // Prevent non string values
-    if (!is_string($moduleName)) {
-      drupal_set_message(t('Couldn\'t unregister a structure YAML location. Non-string argument passed.', 'error'));
-
-      return;
-    }
-
-    // Prevent empty values
-    if (empty($moduleName)) {
-      drupal_set_message(
-          t('Couldn\'t unregister a structure YAML location. Module name: "@moduleName" Location: "@location".', 'error')
-          , ['@moduleName' => $moduleName, '@location' => $location]
-          , 'error'
-      );
-
-      return;
-    }
-
-    /* @var $database Connection */
-    $database = Drupal::database();
-
-    $database
-        ->delete('csv_importer_structure_files_locations')
-        ->where('module_name = :module_name', [':module_name' => $moduleName])
-        ->execute();
-
-    // Refresh the structure cache
-    refreshYmlFromCache();
   }
 
 }
