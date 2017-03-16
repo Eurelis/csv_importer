@@ -1,1 +1,3 @@
-yml_location: '/sites/default/files/structure.yml'
+yml_location: 'sites/default/files/structure.yml'
+csv_base_path: 'sites/default/files/'
+preview_length: 20
