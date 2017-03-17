@@ -108,6 +108,22 @@ class ImportForm extends FormBase {
   }
 
   /**
+   * Validate callback on form cancellation.
+   * This callback is static: call_user_func_array() expects static methods.
+   */
+  public static function validateCancelledForm(array &$form, FormStateInterface $form_state) {
+    
+  }
+
+  /**
+   * Submit callback on form cancellation.
+   * This callback is static: call_user_func_array() expects static methods.
+   */
+  public static function submitCancelledForm(array &$form, FormStateInterface $form_state) {
+    $form_state->setRedirect('csv_importer.home_controller_content');
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function getFormId() {
@@ -215,12 +231,8 @@ class ImportForm extends FormBase {
             $processedRowsCount++;
           }
 
-
-
-
-          //ini_set('memory_limit', '256M');
           // CSV total row count
-          $csvRowCount = 0;
+          $csvRowCount = 1;
 
           // Rewind the pointer
           rewind($handle);
@@ -240,7 +252,9 @@ class ImportForm extends FormBase {
           ];
 
           $form[] = [
-            '#markup' => '<p>' . $this->t('Do you really want to import contents ( ' . $csvRowCount . ' lines) into the table <em>@tableName</em>?', ['@tableName' => $this->tableName]) . '</p>'
+            '#markup' => '<p>' . $this->t('Do you really want to import contents (@csvRowCount lines) into the table <em>@tableName</em>?', [
+              '@csvRowCount' => $csvRowCount,
+              '@tableName' => $this->tableName]) . '</p>'
           ];
 
           $form[] = [
@@ -294,33 +308,77 @@ class ImportForm extends FormBase {
 
         // Get CSV handle
         if ($handle = fopen($this->csvFullPath, 'r')) {
-          $data = [];
           $processedRowsCount = 0;
 
           // Transaction
           $transaction = $this->database->startTransaction();
 
           try {
-            while (($row = fgetcsv($handle)) !== FALSE) {
-              $this->validateColumnCountEquality($row, count($this->rowFieldsNames));
-              
-              // TODO: replace by a better inserter
-              $this->database
-                  ->insert($this->tableName)
-                  ->fields($this->rowFieldsNames, $row)
-                  ->execute();
+            $startTime = microtime(true);
+            set_time_limit(0);
 
-              $processedRowsCount++;
+            while (true) {
+              $values = '';
+
+              // Get each row and insert its values into $values
+              $currentValuesCount = 0;
+
+              while ($currentValuesCount < 100) {
+                if (!(($row = fgetcsv($handle)) !== FALSE)) {
+                  break;
+                }
+
+                $values .= ' (';
+
+                foreach ($row as $value) {
+                  $values .= '\'' . $value . '\'' . ',';
+                }
+
+                $values = rtrim($values, ',');
+                $values .= '),';
+
+                $currentValuesCount++;
+
+                $processedRowsCount++;
+              }
+
+              // Break if no value is added
+              if ($values == '') {
+                break;
+              }
+
+              // Remove last comma
+              $values = rtrim($values, ',');
+
+              // Build needed fields list in SQL syntax
+              $tableFieldsNamesAsSqlString = '';
+              foreach ($this->rowFieldsNames as $field) {
+                $tableFieldsNamesAsSqlString .= $field . ",";
+              }
+
+              $tableFieldsNamesAsSqlString = rtrim($tableFieldsNamesAsSqlString, ",");
+
+              $request = "INSERT INTO `$this->tableName` ($tableFieldsNamesAsSqlString) VALUES" . $values . ";";
+
+              $this->database->query($request);
             }
 
-            drupal_set_message($this->t('Import of ' . $processedRowsCount . ' entrie(s) on @modelName.', ['@modelName' => $this->modelName]));
+            $totalTime = microtime(true) - $startTime;
+
+            $message = $this->t('Import of @processedRowsCount entrie(s) on @modelName in @sec seconds.', [
+              '@processedRowsCount' => $processedRowsCount,
+              '@modelName' => $this->modelName,
+              '@sec' => $totalTime
+            ]);
+
+            drupal_set_message($message);
 
             // Log
-            $this->loggerFactory->get('csv_importer')->notice($this->t('Import of ' . $processedRowsCount . ' entrie(s) on @modelName.', ['@modelName' => $this->modelName]));
+            $this->loggerFactory->get('csv_importer')->notice($message);
           }
           catch (Exception $e) {
             $transaction->rollback();
-            
+
             $this->loggerFactory->get('csv_importer')->error($this->t('Import of @modelName failed. The target table has not been modified. Error message: @err_mess', ['@modelName' => $this->modelName, '@err_mess' => $e]));
             drupal_set_message($this->t('Import of @modelName failed. The target table has not been modified. Error message: @err_mess', ['@modelName' => $this->modelName, '@err_mess' => $e]), 'error');
 
@@ -340,40 +398,6 @@ class ImportForm extends FormBase {
     }
     else {
       drupal_set_message('The module encountered an Error', 'error');
-    }
-  }
-
-  /**
-   * Validate callback on form cancellation.
-   * This callback is static: call_user_func_array() expects static methods.
-   */
-  public static function validateCancelledForm(array &$form, FormStateInterface $form_state) {
-    
-  }
-
-  /**
-   * Submit callback on form cancellation.
-   * This callback is static: call_user_func_array() expects static methods.
-   */
-  public static function submitCancelledForm(array &$form, FormStateInterface $form_state) {
-    $form_state->setRedirect('csv_importer.home_controller_content');
-  }
-
-  /**
-   * Throws an error when the array doesn't have the expected count.
-   * 
-   * @param array $row
-   * @param int $expectedCount
-   * @throws Exception When the array doesn't have the expected count.
-   */
-  private function validateColumnCountEquality($array, $expectedCount, $currentRowNumber) {
-    if (count($array) != $expectedCount) {
-      kint($array);
-      throw new Exception($this->t('Column count mismatch. The row @currentRowNumber has @colCount columns; @expectedCount expected from model.', [
-        '@currentRowNumber' => $currentRowNumber,
-        '@colCount' => count($array),
-        '@expectedCount' => $expectedCount
-      ]));
     }
   }
 
