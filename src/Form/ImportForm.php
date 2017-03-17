@@ -316,6 +316,8 @@ class ImportForm extends FormBase {
           try {
             $startTime = microtime(true);
             set_time_limit(0);
+            
+            $statement = $this->database->insert($this->tableName)->fields($this->rowFieldsNames);
 
             while (true) {
               $values = '';
@@ -327,15 +329,8 @@ class ImportForm extends FormBase {
                 if (!(($row = fgetcsv($handle)) !== FALSE)) {
                   break;
                 }
-
-                $values .= ' (';
-
-                foreach ($row as $value) {
-                  $values .= '\'' . $value . '\'' . ',';
-                }
-
-                $values = rtrim($values, ',');
-                $values .= '),';
+                
+                $statement->values($row);
 
                 $currentValuesCount++;
 
@@ -343,24 +338,11 @@ class ImportForm extends FormBase {
               }
 
               // Break if no value is added
-              if ($values == '') {
+              if ($currentValuesCount == 0) {
                 break;
               }
 
-              // Remove last comma
-              $values = rtrim($values, ',');
-
-              // Build needed fields list in SQL syntax
-              $tableFieldsNamesAsSqlString = '';
-              foreach ($this->rowFieldsNames as $field) {
-                $tableFieldsNamesAsSqlString .= $field . ",";
-              }
-
-              $tableFieldsNamesAsSqlString = rtrim($tableFieldsNamesAsSqlString, ",");
-
-              $request = "INSERT INTO `$this->tableName` ($tableFieldsNamesAsSqlString) VALUES" . $values . ";";
-
-              $this->database->query($request);
+              $statement->execute();
             }
 
             $totalTime = microtime(true) - $startTime;
