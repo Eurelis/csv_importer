@@ -89,6 +89,12 @@ class ImportForm extends FormBase {
   private $csvFullPath;
 
   /**
+   * Array containing unique keys.
+   * @var array
+   */
+  private $uniqueKeys;
+
+  /**
    * Indicates if the form build has errored.
    * @var boolean
    */
@@ -178,6 +184,11 @@ class ImportForm extends FormBase {
             foreach ($this->rowFields as $field) {
               $translatedFieldNames[] = $this->t($field['name']);
               $this->rowFieldsNames[] = $field['name'];
+
+              if (isset($field['unique'])) {
+                // This field is a unique key
+                $this->uniqueKeys[] = $field['name'];
+              }
             }
 
             $this->csvFileName = $this->structure[$this->modelName]['csv_file_name'];
@@ -210,12 +221,12 @@ class ImportForm extends FormBase {
 
         // Get CSV full path
         $this->csvFullPath = realpath(Drupal::config('csv_importer.structureconfig')->get('csv_base_path') . $this->csvFileName . '.csv');
-        
-        if($this->csvFullPath === FALSE) {
+
+        if ($this->csvFullPath === FALSE) {
           $form[] = [
             '#markup' => '<p>' . $this->t('CSV file not found.') . '</p>'
           ];
-          
+
           return $form;
         }
 
@@ -324,47 +335,108 @@ class ImportForm extends FormBase {
           try {
             $startTime = microtime(true);
             set_time_limit(0);
-            
-            $statement = $this->database->insert($this->tableName)->fields($this->rowFieldsNames);
 
-            while (true) {
-              $values = '';
+            //$statement = $this->database->insert($this->tableName)->fields($this->rowFieldsNames);
+            // Get fields names as a SQL list
+            $fieldsNamesAsSqlList = '';
 
-              // Get each row and insert its values into $values
-              $currentValuesCount = 0;
-
-              while ($currentValuesCount < 100) {
-                if (!(($row = fgetcsv($handle)) !== FALSE)) {
-                  break;
-                }
-                
-                $statement->values($row);
-
-                $currentValuesCount++;
-
-                $processedRowsCount++;
-              }
-
-              // Break if no value is added
-              if ($currentValuesCount == 0) {
-                break;
-              }
-
-              $statement->execute();
+            foreach ($this->rowFieldsNames as $s) {
+              $fieldsNamesAsSqlList .= $s . ',';
             }
 
-            $totalTime = microtime(true) - $startTime;
+            // No field to write in => nothing to do
+            if (count($fieldsNamesAsSqlList) == 0) {
+              drupal_set_message($this->t('No field to write in. Please check your structure.yml file.'));
+            }
+            else {
+              // Remove last comma
+              $fieldsNamesAsSqlList = rtrim($fieldsNamesAsSqlList, ',');
 
-            $message = $this->t('Import of @processedRowsCount entrie(s) on @modelName in @sec seconds.', [
-              '@processedRowsCount' => $processedRowsCount,
-              '@modelName' => $this->modelName,
-              '@sec' => $totalTime
-            ]);
+              while (true) {
+                // Query string to build
+                $queryString = "INSERT INTO $this->tableName($fieldsNamesAsSqlList) VALUES";
 
-            drupal_set_message($message);
+                $values = '';
 
-            // Log
-            $this->loggerFactory->get('csv_importer')->notice($message);
+                // Get each row and insert its values into $values
+                $currentValuesCount = 0;
+
+                // Used to uniquely identify a placeholder
+                $currentParamCount = 0;
+
+                // Stores params to bind as an associative array placeholder_id => $value
+                $paramsToBind = [];
+
+                while ($currentValuesCount < 100) {
+                  if (!(($row = fgetcsv($handle)) !== FALSE)) {
+                    break;
+                  }
+
+                  $queryString .= '(';
+
+                  foreach ($row as $v) {
+                    $queryString .= ":ph_$currentParamCount ,";
+                    $paramsToBind[":ph_$currentParamCount"] = $v;
+                    $currentParamCount++;
+                  }
+
+                  $queryString = rtrim($queryString, ',');
+
+                  $queryString .= '), ';
+
+                  $currentValuesCount++;
+
+                  $processedRowsCount++;
+                }
+
+                // Break if no value is added
+                if ($currentValuesCount == 0) {
+                  break;
+                }
+
+                $queryString = rtrim($queryString, ', ');
+
+                // Unique keys
+                if (count($this->uniqueKeys) != 0) {
+                  // Add unique keys here
+                  $queryString .= ' ON DUPLICATE KEY UPDATE';
+
+                  foreach ($this->uniqueKeys as $uk) {
+                    $queryString .= " $uk = VALUES($uk),";
+                  }
+
+                  // Remove trailing comma
+                  $queryString = rtrim($queryString, ',');
+                }
+
+                $queryString .= ';';
+
+                //kint($queryString);
+                //die;
+
+                $statement = $this->database->prepare($queryString);
+                //kint($paramsToBind);
+                //die;
+                /*foreach ($paramsToBind as $paramKey => $paramValue) {
+                  $statement->bindValue($paramKey, $paramValue);
+                }*/
+
+                $statement->execute($paramsToBind);
+              }
+
+              $totalTime = microtime(true) - $startTime;
+
+              $message = $this->t('Import of @processedRowsCount entrie(s) on @modelName in @sec seconds.', [
+                '@processedRowsCount' => $processedRowsCount,
+                '@modelName' => $this->modelName,
+                '@sec' => $totalTime
+              ]);
+
+              drupal_set_message($message);
+
+              // Log
+              $this->loggerFactory->get('csv_importer')->notice($message);
+            }
           }
           catch (Exception $e) {
             $transaction->rollback();
