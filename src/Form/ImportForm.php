@@ -209,7 +209,15 @@ class ImportForm extends FormBase {
         ];
 
         // Get CSV full path
-        $this->csvFullPath = Drupal::config('csv_importer.structureconfig')->get('csv_base_path') . $this->csvFileName . '.csv';
+        $this->csvFullPath = realpath(Drupal::config('csv_importer.structureconfig')->get('csv_base_path') . $this->csvFileName . '.csv');
+        
+        if($this->csvFullPath === FALSE) {
+          $form[] = [
+            '#markup' => '<p>' . $this->t('CSV file not found.') . '</p>'
+          ];
+          
+          return $form;
+        }
 
         // Parse data CSV and display first lines
 
@@ -270,7 +278,7 @@ class ImportForm extends FormBase {
         }
         else {
           $form[] = [
-            '#markup' => '<p>' . $this->t('There is no content to import into <em>@tableName</em>', ['@tableName' => $this->tableName]) . '</p>'
+            '#markup' => '<p>' . $this->t('Couldn\'t open this file: <em>@csvFullPath</em>', ['@csvFullPath' => $this->csvFullPath]) . '</p>'
           ];
         }
         $form[] = $previewTable;
