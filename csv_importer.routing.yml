@@ -31,10 +31,20 @@ csv_importer.purge_form:
     _permission: 'access administration pages'
 
 csv_importer.import_form:
-  path: '/admin/csv_importer/import/{model}'
+  path: '/admin/csv_importer/import/{model}/{temp_file_id}'
   defaults:
     _form: '\Drupal\csv_importer\Form\ImportForm'
     _title: 'ImportForm'
+    temp_file_id: ''
+  requirements:
+    _permission: 'access administration pages'
+    temp_file_id: ^[0-9]+
+
+csv_importer.upload_form:
+  path: '/admin/csv_importer/upload/{model}'
+  defaults:
+    _form: '\Drupal\csv_importer\Form\UploadForm'
+    _title: 'UploadForm'
   requirements:
     _permission: 'access administration pages'
 

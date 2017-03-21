@@ -2,6 +2,7 @@
 
 namespace Drupal\csv_importer\Form;
 
+use Drupal\file\Entity ;
 use Drupal;
 use Drupal\Core\Database\Driver\mysql\Connection;
 use Drupal\Core\Form\FormBase;
@@ -140,6 +141,12 @@ class ImportForm extends FormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
+      $mode_temporary = 0 ;
+      $this->temp_file_id = $this->currentRouteMatch->getParameter('temp_file_id');
+
+    if ($this->temp_file_id != NULL && is_numeric($this->temp_file_id )) {
+        $mode_temporary = 1 ;
+    }
     // recup de la structure
     $this->structure = \Drupal\csv_importer\getYmlFromCache();
 
@@ -165,15 +172,16 @@ class ImportForm extends FormBase {
       $translatedFieldNames = [];
 
       if (!isset($this->structure[$this->modelName]['structure_schema_version'])) {
-        $this->tableName = $this->modelName;
-        $this->rowFields = $this->structure[$this->modelName];
+          $this->tableName = $this->modelName;
+          $this->rowFields = $this->structure[$this->modelName];
 
-        foreach ($this->rowFields as $field) {
-          $translatedFieldNames[] = $this->t($field);
-          $this->rowFieldsNames[] = $field;
-        }
+          foreach ($this->rowFields as $field) {
+              $translatedFieldNames[] = $this->t($field);
+              $this->rowFieldsNames[] = $field;
+          }
 
-        $this->csvFileName = $this->modelName;
+              $this->csvFileName = $this->modelName;
+
       }
       else {
         switch ($this->structure[$this->modelName]['structure_schema_version']) {
@@ -190,9 +198,10 @@ class ImportForm extends FormBase {
                 $this->uniqueKeys[] = $field['name'];
               }
             }
+                $this->csvFileName = $this->structure[$this->modelName]['csv_file_name'];
+                break;
 
-            $this->csvFileName = $this->structure[$this->modelName]['csv_file_name'];
-            break;
+
 
           default:
             drupal_set_message($this->t('Unknown supplied structure_schema_version: "@version".', ['@version' => $this->structure[$this->modelName]['structure_schema_version']]), 'error');
@@ -219,9 +228,17 @@ class ImportForm extends FormBase {
           '#submit' => ['\Drupal\csv_importer\Form\ImportForm::submitCancelledForm']
         ];
 
-        // Get CSV full path
-        $this->csvFullPath = realpath(Drupal::config('csv_importer.structureconfig')->get('csv_base_path') . $this->csvFileName . '.csv');
 
+          if (ISSET($mode_temporary) && $mode_temporary == 1) {
+
+              $file = \Drupal\file\Entity\File::load($this->temp_file_id);
+              $path = $file->getFileUri();
+              $this->csvFullPath = $path ;
+              // kint($this->csvFullPath);
+          } else {
+              // Get CSV full path
+              $this->csvFullPath = realpath(Drupal::config('csv_importer.structureconfig')->get('csv_base_path') . $this->csvFileName . '.csv');
+          }
         if ($this->csvFullPath === FALSE) {
           $form[] = [
             '#markup' => '<p>' . $this->t('CSV file not found.') . '</p>'

@@ -78,17 +78,23 @@ class HomeController extends ControllerBase {
       $url_view = Url::fromUri('internal:/admin/csv_importer/viewrecords/' . $tableName, $link_options);
       $linkObject_view = Link::fromTextAndUrl($this->t('View'), $url_view);
 
+        $url_upload = Url::fromUri('internal:/admin/csv_importer/upload/' . $tableName, $link_options);
+        $linkObject_upload = Link::fromTextAndUrl($this->t('Upload'), $url_upload);
+
+
       $url_import = Url::fromUri('internal:/admin/csv_importer/import/' . $tableName, $link_options);
       $linkObject_import = Link::fromTextAndUrl($this->t('Import'), $url_import);
 
       $url_purge = Url::fromUri('internal:/admin/csv_importer/purge/' . $tableName, $link_options);
       $linkObject_purge = Link::fromTextAndUrl($this->t('Purge'), $url_purge);
 
+
       // Prepare each row
       $rows[] = [
         'data' => [
           $tableName,
           $linkObject_view,
+            $linkObject_upload,
           $linkObject_import,
           $linkObject_purge
         ]
@@ -104,7 +110,7 @@ class HomeController extends ControllerBase {
           'style' => 'width: 100%'
         ],
         [
-          'colspan' => 3,
+          'colspan' => 4,
           'data' => $this->t('Actions')
         ],
       ],
