@@ -6,6 +6,14 @@ csv_importer.home_controller_content:
   requirements:
     _permission: 'access administration pages'
 
+csv_importer.home_controller_refresh_structure:
+  path: '/admin/csv_importer/refresh-structure'
+  defaults:
+    _controller: '\Drupal\csv_importer\Controller\HomeController::refreshStructure'
+    _title: 'CSV Importer structure refresh'
+  requirements:
+    _permission: 'access administration pages'
+
 csv_importer.view_records_controller_content:
   path: '/admin/csv_importer/viewrecords/{model}'
   defaults:
