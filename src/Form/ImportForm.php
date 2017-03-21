@@ -317,13 +317,12 @@ class ImportForm extends FormBase {
       $appIsBusy = Drupal::state()->get('csv_importer.is_busy');
 
       if ($appIsBusy == 1) {
-        drupal_set_message('The module is BUSY ', 'error');
+        drupal_set_message('Cannot import a CSV file for now. There is already an ongoing operation.', 'warning');
         $form_state->setRedirect('csv_importer.home_controller_content');
-        drupal_set_message($this->t('NO import  on @modelName.', ['@modelName' => $this->modelName]));
       }
       else {
-        drupal_set_message('The module is FREE', 'status');
-        Drupal::state()->set('csv_importer.is_busy', 1);
+        // Lock import
+        $this->lockImport();
 
         // Get CSV handle
         if ($handle = fopen($this->csvFullPath, 'r')) {
@@ -336,7 +335,6 @@ class ImportForm extends FormBase {
             $startTime = microtime(true);
             set_time_limit(0);
 
-            //$statement = $this->database->insert($this->tableName)->fields($this->rowFieldsNames);
             // Get fields names as a SQL list
             $fieldsNamesAsSqlList = '';
 
@@ -375,14 +373,14 @@ class ImportForm extends FormBase {
                   $queryString .= '(';
 
                   foreach ($row as $v) {
-                    $queryString .= ":ph_$currentParamCount ,";
-                    $paramsToBind[":ph_$currentParamCount"] = $v;
+                    $queryString .= ':ph_' . $processedRowsCount . '_' . $currentParamCount . ',';
+                    $paramsToBind[':ph_' . $processedRowsCount . '_' . $currentParamCount] = $v;
                     $currentParamCount++;
                   }
 
                   $queryString = rtrim($queryString, ',');
 
-                  $queryString .= '), ';
+                  $queryString .= '),';
 
                   $currentValuesCount++;
 
@@ -394,7 +392,7 @@ class ImportForm extends FormBase {
                   break;
                 }
 
-                $queryString = rtrim($queryString, ', ');
+                $queryString = rtrim($queryString, ',');
 
                 // Unique keys
                 if (count($this->uniqueKeys) != 0) {
@@ -411,15 +409,7 @@ class ImportForm extends FormBase {
 
                 $queryString .= ';';
 
-                //kint($queryString);
-                //die;
-
                 $statement = $this->database->prepare($queryString);
-                //kint($paramsToBind);
-                //die;
-                /*foreach ($paramsToBind as $paramKey => $paramValue) {
-                  $statement->bindValue($paramKey, $paramValue);
-                }*/
 
                 $statement->execute($paramsToBind);
               }
@@ -445,7 +435,7 @@ class ImportForm extends FormBase {
             drupal_set_message($this->t('Import of @modelName failed. The target table has not been modified. Error message: @err_mess', ['@modelName' => $this->modelName, '@err_mess' => $e]), 'error');
 
             // Unlock
-            Drupal::state()->set('csv_importer.is_busy', 0);
+            $this->unlockImport();
           }
 
           fclose($handle);
@@ -455,12 +445,20 @@ class ImportForm extends FormBase {
         $form_state->setRedirect('csv_importer.home_controller_content');
 
         // Unlock
-        Drupal::state()->set('csv_importer.is_busy', 0);
+        $this->unlockImport();
       }
     }
     else {
       drupal_set_message('The module encountered an Error', 'error');
     }
+  }
+
+  private function lockImport() {
+    Drupal::state()->set('csv_importer.is_busy', 1);
+  }
+
+  private function unlockImport() {
+    Drupal::state()->set('csv_importer.is_busy', 0);
   }
 
 }
