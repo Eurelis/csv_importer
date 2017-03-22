@@ -3,6 +3,7 @@
 namespace Drupal\csv_importer;
 
 use Drupal;
+use Drupal\file\Entity\File;
 use Exception;
 
 /**
@@ -10,6 +11,8 @@ use Exception;
  */
 class Model {
   /* Initialization states */
+
+  const INIT_UNINITIALIZED = 'INIT_UNINITIALIZED';
   const INIT_INVALID = 'INIT_INVALID';
   const INIT_VALID = 'INIT_VALID';
 
@@ -44,6 +47,12 @@ class Model {
   public $rowFieldsNames;
 
   /**
+   * Translated row fields names of the table to edit.
+   * @var array
+   */
+  public $rowFieldsNamesTranslated;
+
+  /**
    * CSV file name.
    * @var String
    */
@@ -56,15 +65,29 @@ class Model {
   public $uniqueKeys;
 
   /**
+   * File entity for temporary files uploads.
+   * @var File
+   */
+  private $fileEntity;
+  private $isCsvFileToImportTemporary = false;
+
+  /**
+   * Id of the temporary file, for uploaded file.
+   * @var int
+   */
+  private $temporaryFileId;
+
+  /**
    * Tells if this model has been successfully initialized.
    * 
    * Possible values:
+   * - Model::INIT_UNINITIALIZED (default)
    * - Model::INIT_INVALID
    * - Model::INIT_VALID
    * 
    * @var String 
    */
-  public $initializationState;
+  public $initializationState = self::INIT_UNINITIALIZED;
 
   /**
    * Tells if this model has been successfully processed.
@@ -90,7 +113,7 @@ class Model {
    * @param array $structure The structure array (from cache).
    * @param type $modelName The name of the model to load.
    */
-  public function __construct($structure, $modelName) {
+  public function __construct($structure, $modelName, $temporaryFileId = -1) {
     $this->modelName = $modelName;
 
     if (!isset($structure[$this->modelName]['structure_schema_version'])) {
@@ -98,7 +121,7 @@ class Model {
       $this->rowFields = $structure[$this->modelName];
 
       foreach ($this->rowFields as $field) {
-        $translatedFieldNames[] = t($field);
+        $this->translatedFieldNames[] = t($field);
         $this->rowFieldsNames[] = $field;
       }
 
@@ -111,7 +134,7 @@ class Model {
           $this->rowFields = $structure[$this->modelName]['fields'];
 
           foreach ($this->rowFields as $field) {
-            $translatedFieldNames[] = t($field['name']);
+            $this->translatedFieldNames[] = t($field['name']);
             $this->rowFieldsNames[] = $field['name'];
 
             if (isset($field['unique'])) {
@@ -128,6 +151,26 @@ class Model {
           $this->initializationState = self::INIT_INVALID;
           $this->message = $message;
           return;
+      }
+    }
+
+    if ($temporaryFileId > -1) {
+      $this->isCsvFileToImportTemporary = true;
+      $this->temporaryFileId = $temporaryFileId;
+
+      // Look for a temporary file
+      $this->fileEntity = \Drupal\file\Entity\File::load($temporaryFileId);
+
+      if ($this->fileEntity && file_exists($this->fileEntity->getFileUri())) {
+        // The temporary file exists
+        $this->message = t('Your CSV has been uploaded and will be used for @modelName', ['@modelName' => $this->modelName]);
+      }
+      else {
+        // The temporary file does not exist
+        $this->initializationState = self::INIT_INVALID;
+        $this->message = t('Couldn\'t find the temporary file you just have uploaded.');
+
+        return;
       }
     }
 
@@ -282,9 +325,17 @@ class Model {
 
   /**
    * CSV full path.
-   * @return String
+   * @return mixed Returns false if the path is wrong, else returns a string.
    */
   public function getCsvFullPath() {
+    if ($this->initializationState != self::INIT_VALID) {
+      return false;
+    }
+
+    if ($this->isCsvFileToImportTemporary) {
+      return $this->fileEntity->getFileUri();
+    }
+
     return realpath(Drupal::config('csv_importer.structureconfig')->get('csv_base_path') . $this->csvFileName . '.csv');
   }
 

@@ -11,7 +11,7 @@ use Drupal\Core\Routing\CurrentRouteMatch;
 use Drupal\Core\Session\AccountProxy;
 use Drupal\Core\Url;
 use Drupal\csv_importer\CsvImporterHelper;
-use Exception;
+use Drupal\csv_importer\Model;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -60,46 +60,16 @@ class ImportForm extends FormBase {
   private $modelName;
 
   /**
-   * Name of the table to edit.
-   * @var String
-   */
-  private $tableName;
-
-  /**
-   * Row fields definitions of the table to edit. Not the names!
-   * @var array
-   */
-  private $rowFields;
-
-  /**
-   * Row fields names of the table to edit.
-   * @var array
-   */
-  private $rowFieldsNames;
-
-  /**
-   * CSV file name.
-   * @var String
-   */
-  private $csvFileName;
-
-  /**
    * CSV full path.
    * @var String
    */
   private $csvFullPath;
 
   /**
-   * Array containing unique keys.
-   * @var array
+   * Object containing the values of the model to process.
+   * @var Model
    */
-  private $uniqueKeys;
-
-  /**
-   * Indicates if the form build has errored.
-   * @var boolean
-   */
-  private $hasBuildError = true;
+  private $model;
 
   public function __construct(Connection $database, AccountProxy $current_user, LoggerChannelFactory $loggerFactory, CurrentRouteMatch $current_route_match) {
     $this->database = $database;
@@ -141,10 +111,9 @@ class ImportForm extends FormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
-
     // Get the GET PARAMS
     $mode_temporary = 0;
-    $this->temp_file_id = $this->currentRouteMatch->getParameter('temp_file_id');
+    $temp_file_id = $this->currentRouteMatch->getParameter('temp_file_id');
     $this->modelName = $this->currentRouteMatch->getParameter('model');
 
     // Retrieve the YAML STRUCTURE
@@ -158,25 +127,6 @@ class ImportForm extends FormBase {
       return $form;
     }
 
-    // Check file params validity
-    if ($this->temp_file_id != NULL && is_numeric($this->temp_file_id)) {
-      $file = \Drupal\file\Entity\File::load($this->temp_file_id);
-      if ($file && file_exists($file->getFileUri())) {
-        $mode_temporary = 1;
-        drupal_set_message($this->t('Your CSV has been uploaded and will be use for @modelName', ['@modelName' => $this->modelName]), 'notice');
-      }
-      else {
-        drupal_set_message($this->t('No CSV uploaded', ['@modelName' => $this->modelName]), 'notice');
-
-        $form[] = [
-          '#type' => 'link',
-          '#title' => $this->t('Go back'),
-          '#url' => Url::fromRoute('csv_importer.home_controller_content')
-        ];
-        return $form;
-      }
-    }
-
     if (!in_array($this->modelName, array_keys($this->structure))) {
       drupal_set_message($this->t('Data model "@modelName" doesn\'t exist.', ['@modelName' => $this->modelName]), 'error');
 
@@ -185,151 +135,124 @@ class ImportForm extends FormBase {
         '#title' => $this->t('Go back'),
         '#url' => Url::fromRoute('csv_importer.home_controller_content')
       ];
+
+      return $form;
+    }
+    if ($temp_file_id && $temp_file_id > -1) {
+      $this->model = new Drupal\csv_importer\Model($this->structure, $this->modelName, $temp_file_id);
     }
     else {
-      $translatedFieldNames = [];
-
-      if (!isset($this->structure[$this->modelName]['structure_schema_version'])) {
-        $this->tableName = $this->modelName;
-        $this->rowFields = $this->structure[$this->modelName];
-
-        foreach ($this->rowFields as $field) {
-          $translatedFieldNames[] = $this->t($field);
-          $this->rowFieldsNames[] = $field;
-        }
-
-        $this->csvFileName = $this->modelName;
-      }
-      else {
-        switch ($this->structure[$this->modelName]['structure_schema_version']) {
-          case '1':
-            $this->tableName = $this->structure[$this->modelName]['table_name'];
-            $this->rowFields = $this->structure[$this->modelName]['fields'];
-
-            foreach ($this->rowFields as $field) {
-              $translatedFieldNames[] = $this->t($field['name']);
-              $this->rowFieldsNames[] = $field['name'];
-
-              if (isset($field['unique'])) {
-                // This field is a unique key
-                $this->uniqueKeys[] = $field['name'];
-              }
-            }
-            $this->csvFileName = $this->structure[$this->modelName]['csv_file_name'];
-            break;
-
-
-          default:
-            drupal_set_message($this->t('Unknown supplied structure_schema_version: "@version".', ['@version' => $this->structure[$this->modelName]['structure_schema_version']]), 'error');
-            return $form;
-        }
-      }
-
-      if (!$this->database->schema()->tableExists($this->tableName)) {
-        // Table doesn't exists, so we have to prevent import action
-        drupal_set_message($this->t('Table "@tableName" does not exist or does not exist anymore.', ['@tableName' => $this->tableName]), 'error');
-
-        $form[] = [
-          '#type' => 'link',
-          '#title' => $this->t('Go back'),
-          '#url' => Url::fromRoute('csv_importer.home_controller_content')
-        ];
-      }
-      else {
-        // Table exists
-        $form['cancel'] = [
-          '#type' => 'submit',
-          '#value' => $this->t('Cancel'),
-          '#validate' => ['\Drupal\csv_importer\Form\ImportForm::validateCancelledForm'],
-          '#submit' => ['\Drupal\csv_importer\Form\ImportForm::submitCancelledForm']
-        ];
-
-        // Get CSV full path
-        if (ISSET($mode_temporary) && $mode_temporary == 1) {
-
-          $file = \Drupal\file\Entity\File::load($this->temp_file_id);
-          $path = $file->getFileUri();
-          $this->csvFullPath = $path;
-        }
-        else {
-
-          $this->csvFullPath = realpath(Drupal::config('csv_importer.structureconfig')->get('csv_base_path') . $this->csvFileName . '.csv');
-        }
-        if ($this->csvFullPath === FALSE) {
-          $form[] = [
-            '#markup' => '<p>' . $this->t('CSV file not found on the server.') . '</p>'
-          ];
-
-          return $form;
-        }
-
-        // Parse data CSV and display first lines
-
-        $previewLength = Drupal::config('csv_importer.structureconfig')->get('preview_length');
-
-        if ($previewLength == null) {
-          // Config variable is unexpectedly unset
-          $previewLength = 20;
-          drupal_set_message($this->t('Couldn\'t retrieve preview_length config variable. Previewing @previewLength values.', ['@previewLength' => $previewLength]));
-        }
-
-        if ($handle = fopen($this->csvFullPath, 'r')) {
-          $data = [];
-          $processedRowsCount = 0;
-
-          while (($row = fgetcsv($handle)) !== FALSE && $processedRowsCount < $previewLength) {
-            $data[] = $row;
-
-            $processedRowsCount++;
-          }
-
-          // CSV total row count
-          $csvRowCount = 1;
-
-          // Rewind the pointer
-          rewind($handle);
-
-          while (!feof($handle)) {
-            $chunk = fgets($handle, 4096);
-            $csvRowCount += substr_count($chunk, PHP_EOL);
-          }
-
-          fclose($handle);
-
-          // Display data as table
-          $form['import'] = [
-            '#type' => 'submit',
-            '#value' => $this->t('Import'),
-            '#description' => $this->t('Import')
-          ];
-
-          $form[] = [
-            '#markup' => '<p>' . $this->t('Do you really want to import contents (@csvRowCount lines) into the table <em>@tableName</em>?', [
-              '@csvRowCount' => $csvRowCount,
-              '@tableName' => $this->tableName]) . '</p>'
-          ];
-
-          $form[] = [
-            '#markup' => '<h2>' . $this->t('Preview') . '</h2>'
-          ];
-
-          $previewTable = [
-            '#type' => 'table',
-            '#header' => $translatedFieldNames
-          ];
-
-          $previewTable['#rows'] = $data;
-        }
-        else {
-          $form[] = [
-            '#markup' => '<p>' . $this->t('Couldn\'t open this file: <em>@csvFullPath</em>', ['@csvFullPath' => $this->csvFullPath]) . '</p>'
-          ];
-        }
-        $form[] = $previewTable;
-      }
+      $this->model = new Drupal\csv_importer\Model($this->structure, $this->modelName);
     }
 
-    $this->hasBuildError = false;
+    if ($this->model->initializationState != Drupal\csv_importer\Model::INIT_VALID) {
+      drupal_set_message($this->model->message, 'error');
+
+      $form[] = [
+        '#type' => 'link',
+        '#title' => $this->t('Go back'),
+        '#url' => Url::fromRoute('csv_importer.home_controller_content')
+      ];
+
+      return $form;
+    }
+    elseif ($this->model->message != '') {
+      drupal_set_message($this->model->message, 'notice');
+    }
+
+    if (!$this->database->schema()->tableExists($this->model->tableName)) {
+      // Table doesn't exists, so we have to prevent import action
+      drupal_set_message($this->t('Table "@tableName" does not exist or does not exist anymore.', ['@tableName' => $this->model->tableName]), 'error');
+
+      $form[] = [
+        '#type' => 'link',
+        '#title' => $this->t('Go back'),
+        '#url' => Url::fromRoute('csv_importer.home_controller_content')
+      ];
+    }
+    else {
+      // Table exists
+      $form['cancel'] = [
+        '#type' => 'submit',
+        '#value' => $this->t('Cancel'),
+        '#validate' => ['\Drupal\csv_importer\Form\ImportForm::validateCancelledForm'],
+        '#submit' => ['\Drupal\csv_importer\Form\ImportForm::submitCancelledForm']
+      ];
+
+      // Get CSV full path
+      $this->csvFullPath = $this->model->getCsvFullPath();
+
+      if ($this->csvFullPath === FALSE) {
+        $form[] = [
+          '#markup' => '<p>' . $this->t('CSV file not found on the server.') . '</p>'
+        ];
+
+        return $form;
+      }
+
+      // Parse data CSV and display first lines
+      $previewLength = Drupal::config('csv_importer.structureconfig')->get('preview_length');
+
+      if ($previewLength == null) {
+        // Config variable is unexpectedly unset
+        $previewLength = 20;
+        drupal_set_message($this->t('Couldn\'t retrieve preview_length config variable. Previewing @previewLength values.', ['@previewLength' => $previewLength]));
+      }
+
+      if ($handle = fopen($this->csvFullPath, 'r')) {
+        $data = [];
+        $processedRowsCount = 0;
+
+        while (($row = fgetcsv($handle)) !== FALSE && $processedRowsCount < $previewLength) {
+          $data[] = $row;
+
+          $processedRowsCount++;
+        }
+
+        // CSV total row count
+        $csvRowCount = 1;
+
+        // Rewind the pointer
+        rewind($handle);
+
+        while (!feof($handle)) {
+          $chunk = fgets($handle, 4096);
+          $csvRowCount += substr_count($chunk, PHP_EOL);
+        }
+
+        fclose($handle);
+
+        // Display data as table
+        $form['import'] = [
+          '#type' => 'submit',
+          '#value' => $this->t('Import'),
+          '#description' => $this->t('Import')
+        ];
+
+        $form[] = [
+          '#markup' => '<p>' . $this->t('Do you really want to import contents (@csvRowCount lines) into the table <em>@tableName</em>?', [
+            '@csvRowCount' => $csvRowCount,
+            '@tableName' => $this->model->tableName]) . '</p>'
+        ];
+
+        $form[] = [
+          '#markup' => '<h2>' . $this->t('Preview') . '</h2>'
+        ];
+
+        $previewTable = [
+          '#type' => 'table',
+          '#header' => $translatedFieldNames
+        ];
+
+        $previewTable['#rows'] = $data;
+      }
+      else {
+        $form[] = [
+          '#markup' => '<p>' . $this->t('Couldn\'t open this file: <em>@csvFullPath</em>', ['@csvFullPath' => $this->csvFullPath]) . '</p>'
+        ];
+      }
+      $form[] = $previewTable;
+    }
 
     return $form;
   }
@@ -355,143 +278,35 @@ class ImportForm extends FormBase {
       }
       else {
         // Lock import
-        $this->lockImport();
+        $this->model->import($this->database);
 
-        // Get CSV handle
-        if ($handle = fopen($this->csvFullPath, 'r')) {
-          $processedRowsCount = 0;
+        switch ($this->model->processingState) {
+          case Model::PROC_ERROR:
+            drupal_set_message($this->model->message, 'error');
+            break;
 
-          // Transaction
-          $transaction = $this->database->startTransaction();
+          case Model::PROC_WARNING:
+            drupal_set_message($this->model->message, 'warning');
+            break;
 
-          try {
-            $startTime = microtime(true);
-            set_time_limit(0);
-
-            // Get fields names as a SQL list
-            $fieldsNamesAsSqlList = '';
-
-            foreach ($this->rowFieldsNames as $s) {
-              $fieldsNamesAsSqlList .= $s . ',';
+          case Model::PROC_SUCCESS:
+            if ($this->model->message != '') {
+              drupal_set_message($this->model->message);
             }
+            break;
 
-            // No field to write in => nothing to do
-            if (count($fieldsNamesAsSqlList) == 0) {
-              drupal_set_message($this->t('No field to write in. Please check your structure.yml file.'));
-            }
-            else {
-              // Remove last comma
-              $fieldsNamesAsSqlList = rtrim($fieldsNamesAsSqlList, ',');
-
-              while (true) {
-                // Query string to build
-                $queryString = "INSERT INTO $this->tableName($fieldsNamesAsSqlList) VALUES";
-
-                $values = '';
-
-                // Get each row and insert its values into $values
-                $currentValuesCount = 0;
-
-                // Used to uniquely identify a placeholder
-                $currentParamCount = 0;
-
-                // Stores params to bind as an associative array placeholder_id => $value
-                $paramsToBind = [];
-
-                while ($currentValuesCount < 100) {
-                  if (!(($row = fgetcsv($handle)) !== FALSE)) {
-                    break;
-                  }
-
-                  $queryString .= '(';
-
-                  foreach ($row as $v) {
-                    $queryString .= ':ph_' . $processedRowsCount . '_' . $currentParamCount . ',';
-                    $paramsToBind[':ph_' . $processedRowsCount . '_' . $currentParamCount] = $v;
-                    $currentParamCount++;
-                  }
-
-                  $queryString = rtrim($queryString, ',');
-
-                  $queryString .= '),';
-
-                  $currentValuesCount++;
-
-                  $processedRowsCount++;
-                }
-
-                // Break if no value is added
-                if ($currentValuesCount == 0) {
-                  break;
-                }
-
-                $queryString = rtrim($queryString, ',');
-
-                // Unique keys
-                if (count($this->uniqueKeys) != 0) {
-                  // Add unique keys here
-                  $queryString .= ' ON DUPLICATE KEY UPDATE';
-
-                  foreach ($this->uniqueKeys as $uk) {
-                    $queryString .= " $uk = VALUES($uk),";
-                  }
-
-                  // Remove trailing comma
-                  $queryString = rtrim($queryString, ',');
-                }
-
-                $queryString .= ';';
-
-                $statement = $this->database->prepare($queryString);
-
-                $statement->execute($paramsToBind);
-              }
-
-              $totalTime = microtime(true) - $startTime;
-
-              $message = $this->t('Import of @processedRowsCount entrie(s) on @modelName in @sec seconds.', [
-                '@processedRowsCount' => $processedRowsCount,
-                '@modelName' => $this->modelName,
-                '@sec' => $totalTime
-              ]);
-
-              drupal_set_message($message);
-
-              // Log
-              $this->loggerFactory->get('csv_importer')->notice($message);
-            }
-          }
-          catch (Exception $e) {
-            $transaction->rollback();
-
-            $this->loggerFactory->get('csv_importer')->error($this->t('Import of @modelName failed. The target table has not been modified. Error message: @err_mess', ['@modelName' => $this->modelName, '@err_mess' => $e]));
-            drupal_set_message($this->t('Import of @modelName failed. The target table has not been modified. Error message: @err_mess', ['@modelName' => $this->modelName, '@err_mess' => $e]), 'error');
-
-            // Unlock
-            $this->unlockImport();
-          }
-
-          fclose($handle);
+          default:
+            $this->loggerFactory->critical(t('An unexpected error prevented the processing of the model "@model". Please contact the developer.', ['@model' => $this->modelName]));
+            break;
         }
 
         // Redirect to csv_importer home
         $form_state->setRedirect('csv_importer.home_controller_content');
-
-        // Unlock
-        $this->unlockImport();
       }
     }
     else {
       drupal_set_message('The module encountered an Error', 'error');
     }
-  }
-
-  private function lockImport() {
-    Drupal::state()->set('csv_importer.is_busy', 1);
-  }
-
-  private function unlockImport() {
-    Drupal::state()->set('csv_importer.is_busy', 0);
   }
 
 }
