@@ -9,6 +9,7 @@ use Drupal\Core\Logger\LoggerChannelFactory;
 use Drupal\Core\Routing\CurrentRouteMatch;
 use Drupal\Core\Session\AccountProxy;
 use Drupal\Core\Url;
+use Drupal\csv_importer\CsvImporterHelper;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -95,7 +96,7 @@ class PurgeForm extends FormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     // Parse YML file to get table names
-    $structure = \Drupal\csv_importer\getYmlFromCache();
+    $structure = CsvImporterHelper::getYmlFromCache();
 
     if ($structure == null) {
       // The yaml failed to parse.

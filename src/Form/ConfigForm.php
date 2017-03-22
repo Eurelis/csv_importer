@@ -4,6 +4,7 @@ namespace Drupal\csv_importer\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\csv_importer\CsvImporterHelper;
 
 /**
  * Class ConfigForm.
@@ -34,7 +35,7 @@ class ConfigForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('csv_importer.structureconfig');
 
-    if (!\Drupal\csv_importer\isYmlInCache()) {
+    if (!CsvImporterHelper::isYmlInCache()) {
       $warning = t('Failed to parse structure YAML file. Please put the file at this location or change the file location.');
     }
 
@@ -85,7 +86,7 @@ class ConfigForm extends ConfigFormBase {
 
 
     // Reimport YAML file
-    \Drupal\csv_importer\refreshYmlFromCache();
+    CsvImporterHelper::refreshYmlFromCache();
   }
 
   private function validateNumericValue($value) {

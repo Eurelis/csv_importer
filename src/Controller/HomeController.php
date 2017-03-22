@@ -7,6 +7,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Driver\mysql\Connection;
 use Drupal\Core\Link;
 use Drupal\Core\Url;
+use Drupal\csv_importer\CsvImporterHelper;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
@@ -47,7 +48,7 @@ class HomeController extends ControllerBase {
    *   Return Hello string.
    */
   public function content() {
-    $structures = \Drupal\csv_importer\getYmlFromCache();
+    $structures = CsvImporterHelper::getYmlFromCache();
 
     if (!isset($structures)) {
       drupal_set_message($this->t('The structure data couldn\'t be found.'), 'error');
@@ -78,9 +79,8 @@ class HomeController extends ControllerBase {
       $url_view = Url::fromUri('internal:/admin/csv_importer/viewrecords/' . $tableName, $link_options);
       $linkObject_view = Link::fromTextAndUrl($this->t('View'), $url_view);
 
-        $url_upload = Url::fromUri('internal:/admin/csv_importer/upload/' . $tableName, $link_options);
-        $linkObject_upload = Link::fromTextAndUrl($this->t('Upload'), $url_upload);
-
+      $url_upload = Url::fromUri('internal:/admin/csv_importer/upload/' . $tableName, $link_options);
+      $linkObject_upload = Link::fromTextAndUrl($this->t('Upload'), $url_upload);
 
       $url_import = Url::fromUri('internal:/admin/csv_importer/import/' . $tableName, $link_options);
       $linkObject_import = Link::fromTextAndUrl($this->t('Import'), $url_import);
@@ -88,13 +88,12 @@ class HomeController extends ControllerBase {
       $url_purge = Url::fromUri('internal:/admin/csv_importer/purge/' . $tableName, $link_options);
       $linkObject_purge = Link::fromTextAndUrl($this->t('Purge'), $url_purge);
 
-
       // Prepare each row
       $rows[] = [
         'data' => [
           $tableName,
           $linkObject_view,
-            $linkObject_upload,
+          $linkObject_upload,
           $linkObject_import,
           $linkObject_purge
         ]
@@ -121,7 +120,7 @@ class HomeController extends ControllerBase {
   }
 
   public function refreshStructure() {
-    \Drupal\csv_importer\refreshYmlFromCache();
+    CsvImporterHelper::refreshYmlFromCache();
 
     return new RedirectResponse(Drupal::url('csv_importer.home_controller_content'));
   }

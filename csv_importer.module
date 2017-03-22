@@ -1,93 +1,47 @@
 <?php
 
-namespace Drupal\csv_importer {
+use Drupal\csv_importer\CsvImporterHelper;
+use Drupal\csv_importer\Model;
 
-  use Drupal;
-  use Drupal\Core\Cache\CacheBackendInterface;
-  use Symfony\Component\Yaml\Exception\ParseException;
-  use Symfony\Component\Yaml\Yaml;
+function csv_importer_cron() {
+  // Get the structure from cache
+  $structure = CsvImporterHelper::getYmlFromCache();
 
-  /**
-   * Gets the structure Yaml file used by the csv_importer module from cache.
-   * 
-   * @return array Yaml config file.
-   */
-  function getYmlFromCache() {
-    /* @var $cache CacheBackendInterface */
-    $cache = Drupal::cache();
-
-    if ($valueFromCache = $cache->get('csv_importer_ymlFromCache')) {
-      return $valueFromCache->data;
-    }
-
-    return refreshYmlFromCache();
+  if ($structure == null) {
+    // The yaml failed to parse.
+    return;
   }
 
-  /**
-   * Refreshes the cache of the structure Yaml file used by the csv_importer module.
-   * 
-   * @return array Yaml config file.
-   */
-  function refreshYmlFromCache() {
-    /* @var $cache CacheBackendInterface */
-    $cache = Drupal::cache();
+  $database = Drupal::database();
+  $loggerFactory = Drupal::logger('csv_importer');
 
-    try {
-      // Structure file location
-      $ymlLocation = Drupal::config('csv_importer.structureconfig')->get('yml_location');
+  // Import
+  foreach (array_keys($structure) as $modelName) {
+    $model = new Model($structure, $modelName);
 
-      // Parse YAML file!
-      $structure = Yaml::parse(file_get_contents($ymlLocation));
-
-      if ($structure == null) {
-        // Yaml::parse(...) returns null if the file does not exist
-        flushYmlCache();
-
-        drupal_set_message(t('Failed to parse structure YAML file from this location: @ymlLocation . Please put the file at this location or change the file location.', ['@ymlLocation' => $ymlLocation]), 'warning');
-
-        return null;
+    if ($model->initializationState == Model::INIT_VALID) {
+      $model->import($database);
+      
+      switch ($model->processingState){
+        case Model::PROC_WARNING:
+          $loggerFactory->warning($model->message);
+          break;
+        
+        case Model::PROC_ERROR:
+          $loggerFactory->error($model->message);
+          break;
+        
+        case Model::PROC_SUCCESS:
+          $loggerFactory->info($model->message);
+          break;
+        
+        default:
+          $loggerFactory->critical(t('An unexpected error prevented the processing of the model "@model". Please contact the developer.', ['@model' => $modelName]));
+          break;
       }
-
-      // Put full structure in cache
-      $cache->set('csv_importer_ymlFromCache', $structure);
-
-      drupal_set_message(t('CSV Importer: The structure YAML cache has been refreshed successfully.'));
-
-      return $structure;
     }
-    catch (ParseException $e) {
-      flushYmlCache();
-
-      drupal_set_message(t('Unable to parse the structure YAML file: @s', $e->getMessage()), 'error');
-
-      return null;
+    else {
+      $loggerFactory->error(t($model->message));
     }
   }
-
-  /**
-   * Flushes the structure cache.
-   */
-  function flushYmlCache() {
-    $cache = Drupal::cache();
-
-    if ($cache->get('csv_importer_ymlFromCache')) {
-      $cache->delete('csv_importer_ymlFromCache');
-    }
-  }
-
-  /**
-   * Checks if the structure is currently cached.
-   * 
-   * @return boolean TRUE if the structure is in the cache. FALSE otherwise.
-   */
-  function isYmlInCache() {
-    $cache = Drupal::cache();
-
-    if ($cache->get('csv_importer_ymlFromCache')) {
-      return true;
-    }
-
-    return false;
-  }
-
 }
