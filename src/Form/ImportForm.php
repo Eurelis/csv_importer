@@ -167,7 +167,14 @@ class ImportForm extends FormBase
 
         // Check file params validity
         if ($this->temp_file_id != NULL && is_numeric($this->temp_file_id)) {
-            if ($file = \Drupal\file\Entity\File::load($this->temp_file_id)) {
+            $file = \Drupal\file\Entity\File::load($this->temp_file_id);
+            if ($file && file_exists($file->getFileUri())) {
+                //$file_on_serv = ;
+
+
+
+
+
                 $mode_temporary = 1;
                 drupal_set_message($this->t('Your CSV has been uploaded and will be use for @modelName', ['@modelName' => $this->modelName]), 'notice');
             } else {
@@ -253,7 +260,8 @@ class ImportForm extends FormBase
 
                     $file = \Drupal\file\Entity\File::load($this->temp_file_id);
                     $path = $file->getFileUri();
-                    $this->csvFullPath = realpath($path);
+                    $this->csvFullPath = $path;
+
 
                 } else {
 
