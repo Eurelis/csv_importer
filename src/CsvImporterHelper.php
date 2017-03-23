@@ -11,7 +11,7 @@ class CsvImporterHelper {
 
   const LOG_NONE = 'LOG_NONE';
   const LOG_DRUPAL_SET_MESSAGE = 'LOG_DRUPAL_SET_MESSAGE';
-  const LOG_LOG_FACTORY = 'LOG_LOG_FACTORY';
+  const LOG_LOGGER_FACTORY = 'LOG_LOG_FACTORY';
   const LOG_DRUPAL_SET_MESSAGE_AND_LOGGER_FACTORY = 'LOG_DRUPAL_SET_MESSAGE_AND_LOG_FACTORY';
 
   /**
@@ -115,7 +115,7 @@ class CsvImporterHelper {
         drupal_set_message($message, $severity);
         break;
 
-      case self::LOG_LOG_FACTORY:
+      case self::LOG_LOGGER_FACTORY:
         self::logWithLoggerFactory($message, $severity);
         break;
 
@@ -125,20 +125,97 @@ class CsvImporterHelper {
         break;
     }
   }
-  
+
   private static function logWithLoggerFactory($message, $severity) {
-    switch($severity) {
+    switch ($severity) {
       case 'error':
         \Drupal::logger('csv_importer')->error($message);
         break;
-      
+
       case 'warning':
         \Drupal::logger('csv_importer')->warning($message);
         break;
-      
+
       default:
         \Drupal::logger('csv_importer')->notice($message);
         break;
+    }
+  }
+
+  /**
+   * Imports all models defined in the structure.yml.
+   * Callable from drush.
+   * 
+   * @param string $modelName
+   */
+  public static function importAllModels() {
+    // Get the structure from cache
+    $structure = self::getYmlFromCache();
+
+    if ($structure == null) {
+      // The yaml failed to parse.
+      return;
+    }
+
+    $database = Drupal::database();
+    $loggerFactory = Drupal::logger('csv_importer');
+
+    // Import
+    foreach (array_keys($structure) as $modelName) {
+      $model = new Model($structure, $modelName);
+
+      self::import($model);
+    }
+  }
+
+  /**
+   * Imports a single model.
+   * Callable from drush.
+   * 
+   * @param string $modelName Name of the model to import.
+   */
+  public static function importSingleModel($modelName) {
+    // Get the structure from cache
+    $structure = self::getYmlFromCache();
+
+    if ($structure == null) {
+      // The yaml failed to parse.
+      return;
+    }
+
+    $database = Drupal::database();
+    $loggerFactory = Drupal::logger('csv_importer');
+
+    // Import
+    $model = new Model($structure, $modelName);
+
+    self::import($model);
+  }
+
+  private static function import($model) {
+    if ($model->initializationState == Model::INIT_VALID) {
+      $model->import(\Drupal::database());
+
+      switch ($model->processingState) {
+        case Model::PROC_WARNING:
+          self::log($model->message, 'warning');
+          break;
+
+        case Model::PROC_ERROR:
+          self::log($model->message, 'error');
+          break;
+
+        case Model::PROC_SUCCESS:
+          self::log($model->message);
+          break;
+
+        default:
+          self::log($model->message, 'error');
+          break;
+      }
+    }
+    else {
+      self::log($model->message, 'error');
     }
   }
 

@@ -115,7 +115,21 @@ class Model {
    * @param type $modelName The name of the model to load.
    */
   public function __construct($structure, $modelName, $temporaryFileId = -1) {
+    if ($modelName == null) {
+      $message = t('Supplied model name was null.');
+      $this->initializationState = self::INIT_INVALID;
+      $this->message = $message;
+      return;
+    }
+
     $this->modelName = $modelName;
+    
+    if (!isset($structure[$this->modelName])) {
+      $message = t('Unknown supplied model name. Model name was: @modelName', ['@modelName' => $modelName]);
+      $this->initializationState = self::INIT_INVALID;
+      $this->message = $message;
+      return;
+    }
 
     if (!isset($structure[$this->modelName]['structure_schema_version'])) {
       $this->tableName = $this->modelName;
@@ -183,6 +197,11 @@ class Model {
    * @param Connection $connection Connection object which handles the database operations.
    */
   public function import(Connection $connection) {
+    // Prevent uninitialized or invalid
+    if ($this->initializationState != Model::INIT_VALID) {
+      return;
+    }
+
     if ($connection == null) {
       $this->processingState = self::PROC_ERROR;
       $this->message = t('No Connection object provided.');
@@ -323,12 +342,17 @@ class Model {
     // Unlock
     $this->unlockImport();
   }
-  
+
   /**
    * Imports this model into its corresponding table.
    * @param Connection $connection Connection object which handles the database operations.
    */
   public function purge(Connection $connection) {
+    // Prevent uninitialized or invalid
+    if ($this->initializationState != Model::INIT_VALID) {
+      return;
+    }
+
     try {
       // Purge
       $query = $this->database->delete($this->tableName);

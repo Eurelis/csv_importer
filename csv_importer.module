@@ -5,46 +5,7 @@ use Drupal\csv_importer\Model;
 
 function csv_importer_cron() {
   // Set CsvImporterHelper to not use drupal_set_message
-  CsvImporterHelper::$logType = CsvImporterHelper::LOG_LOG_FACTORY; 
+  CsvImporterHelper::$logType = CsvImporterHelper::LOG_LOGGER_FACTORY; 
   
-  // Get the structure from cache
-  $structure = CsvImporterHelper::getYmlFromCache();
-
-  if ($structure == null) {
-    // The yaml failed to parse.
-    return;
-  }
-
-  $database = Drupal::database();
-  $loggerFactory = Drupal::logger('csv_importer');
-
-  // Import
-  foreach (array_keys($structure) as $modelName) {
-    $model = new Model($structure, $modelName);
-
-    if ($model->initializationState == Model::INIT_VALID) {
-      $model->import($database);
-      
-      switch ($model->processingState){
-        case Model::PROC_WARNING:
-          $loggerFactory->warning($model->message);
-          break;
-        
-        case Model::PROC_ERROR:
-          $loggerFactory->error($model->message);
-          break;
-        
-        case Model::PROC_SUCCESS:
-          $loggerFactory->info($model->message);
-          break;
-        
-        default:
-          $loggerFactory->critical(t('An unexpected error prevented the processing of the model "@model". Please contact the developer.', ['@model' => $modelName]));
-          break;
-      }
-    }
-    else {
-      $loggerFactory->error(t($model->message));
-    }
-  }
+  CsvImporterHelper::importAll();
 }
