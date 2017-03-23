@@ -3,6 +3,7 @@
 namespace Drupal\csv_importer;
 
 use Drupal;
+use Drupal\Core\Database\Driver\mysql\Connection;
 use Drupal\file\Entity\File;
 use Exception;
 
@@ -179,9 +180,9 @@ class Model {
 
   /**
    * Imports this model into its corresponding table.
-   * @param \Drupal\Core\Database\Driver\mysql\Connection $connection Connection object which handles the database operations.
+   * @param Connection $connection Connection object which handles the database operations.
    */
-  public function import(\Drupal\Core\Database\Driver\mysql\Connection $connection) {
+  public function import(Connection $connection) {
     if ($connection == null) {
       $this->processingState = self::PROC_ERROR;
       $this->message = t('No Connection object provided.');
@@ -321,6 +322,26 @@ class Model {
 
     // Unlock
     $this->unlockImport();
+  }
+  
+  /**
+   * Imports this model into its corresponding table.
+   * @param Connection $connection Connection object which handles the database operations.
+   */
+  public function purge(Connection $connection) {
+    try {
+      // Purge
+      $query = $this->database->delete($this->tableName);
+
+      $entriesCount = $query->execute();
+
+      $this->processingState = self::PROC_SUCCESS;
+      $this->message = t('Table @tableName has been purged. (@entriesCount entries removed)', ['@tableName' => $this->tableName, '@entriesCount' => $entriesCount]);
+    }
+    catch (Exception $e) {
+      $this->processingState = self::PROC_ERROR;
+      $this->message = t('An unknown error occured. Error message: @errmess', ['@errmess' => $e]);
+    }
   }
 
   /**

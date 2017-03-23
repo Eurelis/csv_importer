@@ -157,7 +157,7 @@ class ImportForm extends FormBase {
       return $form;
     }
     elseif ($this->model->message != '') {
-      drupal_set_message($this->model->message, 'notice');
+      drupal_set_message($this->model->message, 'status');
     }
 
     if (!$this->database->schema()->tableExists($this->model->tableName)) {

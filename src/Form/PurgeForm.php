@@ -10,6 +10,7 @@ use Drupal\Core\Routing\CurrentRouteMatch;
 use Drupal\Core\Session\AccountProxy;
 use Drupal\Core\Url;
 use Drupal\csv_importer\CsvImporterHelper;
+use Drupal\csv_importer\Model;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -46,22 +47,16 @@ class PurgeForm extends FormBase {
   protected $currentUser;
 
   /**
-   * Name of the module which contains the model to edit.
-   * @var String
-   */
-  private $moduleName;
-
-  /**
    * Name of the model to edit.
    * @var String
    */
   private $modelName;
 
   /**
-   * Name of the table to edit.
-   * @var String
+   * Object containing the model values.
+   * @var Model
    */
-  private $tableName;
+  private $model;
 
   /**
    * Indicates if the form build has errored.
@@ -117,66 +112,71 @@ class PurgeForm extends FormBase {
         '#title' => $this->t('Go back'),
         '#url' => Url::fromRoute('csv_importer.home_controller_content')
       ];
+
+      $this->hasBuildError = false;
+      return $form;
     }
-    else {
-      if (!isset($structure[$this->modelName]['structure_schema_version'])) {
-        $this->tableName = $this->modelName;
-      }
-      else {
-        switch ($structure[$this->modelName]['structure_schema_version']) {
-          case '1':
-            $this->tableName = $structure[$this->modelName]['table_name'];
-            break;
 
-          default:
-            drupal_set_message($this->t('Unknown supplied structure_schema_version: "@version".', ['@version' => $structure[$this->modelName]['structure_schema_version']]), 'error');
-            return $form;
-        }
-      }
+    $this->model = new Model($structure, $this->modelName);
 
-      if (!$this->database->schema()->tableExists($this->tableName)) {
-        // Table doesn't exists, so we have to prevent purge action
-        drupal_set_message($this->t('Table "@tableName" does not exist or does not exist anymore.', ['@tableName' => $this->tableName]), 'error');
+    switch ($this->model->initializationState) {
+      case Model::INIT_VALID:
+        break;
 
+      default:
+        drupal_set_message($this->model->message, 'error');
+        return $form;
+    }
+
+    if (!$this->database->schema()->tableExists($this->model->tableName)) {
+      // Table doesn't exists, so we have to prevent purge action
+      drupal_set_message($this->t('Table "@tableName" does not exist or does not exist anymore.', ['@tableName' => $this->model->tableName]), 'error');
+
+      $form[] = [
+        '#type' => 'link',
+        '#title' => $this->t('Go back'),
+        '#url' => Url::fromRoute('csv_importer.home_controller_content')
+      ];
+
+      $this->hasBuildError = false;
+      return $form;
+    }
+
+    // Table exists, allow purge action
+    try {
+      $query = $this->database
+          ->query('SELECT COUNT(*) AS count FROM ' . $this->model->tableName . ';');
+      $query->allowRowCount = TRUE;
+      $numRows = $query->fetchObject()->count;
+
+      if ($numRows == 0) {
         $form[] = [
-          '#type' => 'link',
-          '#title' => $this->t('Go back'),
-          '#url' => Url::fromRoute('csv_importer.home_controller_content')
+          '#markup' => '<p>' . $this->t('<em>@tableName</em> is empty', ['@tableName' => $this->model->tableName]) . '</p>'
         ];
       }
       else {
-        // Table exists, allow purge action
-        $query = $this->database
-            ->query('SELECT COUNT(*) AS count FROM ' . $this->tableName . ';');
-        $query->allowRowCount = TRUE;
-        $numRows = $query->fetchObject()->count;
+        $form[] = [
+          '#markup' => '<p>' . $this->t('Do you really want to purge ( ' . $numRows . ' entries) contents of the table <em>@tableName</em>?', ['@tableName' => $this->model->tableName]) . '</p>'
+        ];
 
-        if ($numRows == 0) {
-          $form[] = [
-            '#markup' => '<p>' . $this->t('<em>@tableName</em> is empty', ['@tableName' => $this->tableName]) . '</p>'
-          ];
-        }
-        else {
-          $form[] = [
-            '#markup' => '<p>' . $this->t('Do you really want to purge ( ' . $numRows . ' entries) contents of the table <em>@tableName</em>?', ['@tableName' => $this->tableName]) . '</p>'
-          ];
-
-          $form['purge'] = [
-            '#type' => 'submit',
-            '#value' => $this->t('Purge'),
-            '#description' => $this->t('Purge this content'),
-          ];
-        }
-        $form['cancel'] = [
+        $form['purge'] = [
           '#type' => 'submit',
-          '#value' => $this->t('Go back'),
-          '#validate' => ['\Drupal\csv_importer\Form\PurgeForm::validateCancelledForm'],
-          '#submit' => ['\Drupal\csv_importer\Form\PurgeForm::submitCancelledForm']
+          '#value' => $this->t('Purge'),
+          '#description' => $this->t('Purge this content'),
         ];
       }
-    }
+      $form['cancel'] = [
+        '#type' => 'submit',
+        '#value' => $this->t('Go back'),
+        '#validate' => ['\Drupal\csv_importer\Form\PurgeForm::validateCancelledForm'],
+        '#submit' => ['\Drupal\csv_importer\Form\PurgeForm::submitCancelledForm']
+      ];
 
-    $this->hasBuildError = false;
+      $this->hasBuildError = false;
+    }
+    catch (Exception $e) {
+      drupal_set_message($this->t('An unknown error occured. Error message: @errmess', ['@errmess' => $e]));
+    }
 
     return $form;
   }
@@ -195,18 +195,22 @@ class PurgeForm extends FormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    // Purge
-    $query = $this->database->delete($this->tableName);
+    $this->model->purge($this->database);
 
-    $entriesCount = $query->execute();
+    switch ($this->model->processingState) {
+      case Model::PROC_SUCCESS:
+        drupal_set_message($this->model->message);
+        $this->loggerFactory->get('csv_importer')->notice($this->model->message);
+        break;
 
-    drupal_set_message($this->t('Table @tableName has been purged. (@entriesCount entries removed)', ['@tableName' => $this->tableName, '@entriesCount' => $entriesCount]));
+      default:
+        drupal_set_message($this->model->message, 'error');
+        $this->loggerFactory->get('csv_importer')->error($this->model->message);
+        break;
+    }
 
     // Redirect to module home
     $form_state->setRedirect('csv_importer.home_controller_content');
-
-    // Log
-    $this->loggerFactory->get('csv_importer')->notice($this->t('Table @tableName has been purged.', ['@tableName' => $this->tableName]));
   }
 
   /**

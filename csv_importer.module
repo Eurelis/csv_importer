@@ -4,6 +4,9 @@ use Drupal\csv_importer\CsvImporterHelper;
 use Drupal\csv_importer\Model;
 
 function csv_importer_cron() {
+  // Set CsvImporterHelper to not use drupal_set_message
+  CsvImporterHelper::$logType = CsvImporterHelper::LOG_LOG_FACTORY; 
+  
   // Get the structure from cache
   $structure = CsvImporterHelper::getYmlFromCache();
 

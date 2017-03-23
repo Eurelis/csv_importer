@@ -9,6 +9,23 @@ use Symfony\Component\Yaml\Yaml;
 
 class CsvImporterHelper {
 
+  const LOG_NONE = 'LOG_NONE';
+  const LOG_DRUPAL_SET_MESSAGE = 'LOG_DRUPAL_SET_MESSAGE';
+  const LOG_LOG_FACTORY = 'LOG_LOG_FACTORY';
+  const LOG_DRUPAL_SET_MESSAGE_AND_LOGGER_FACTORY = 'LOG_DRUPAL_SET_MESSAGE_AND_LOG_FACTORY';
+
+  /**
+   * Possible values are:
+   * 
+   * - LOG_NONE
+   * - LOG_DRUPAL_SET_MESSAGE (default)
+   * - LOG_LOG_FACTORY
+   * - LOG_DRUPAL_SET_MESSAGE_AND_LOG_FACTORY
+   * 
+   * @var string Log type as a string.
+   */
+  public static $logType = self::LOG_DRUPAL_SET_MESSAGE;
+
   /**
    * Gets the structure Yaml file used by the csv_importer module from cache.
    * 
@@ -45,7 +62,7 @@ class CsvImporterHelper {
         // Yaml::parse(...) returns null if the file does not exist
         CsvImporterHelper::flushYmlCache();
 
-        drupal_set_message(t('Failed to parse structure YAML file from this location: @ymlLocation . Please put the file at this location or change the file location.', ['@ymlLocation' => $ymlLocation]), 'warning');
+        self::log(t('Failed to parse structure YAML file from this location: @ymlLocation . Please put the file at this location or change the file location.', ['@ymlLocation' => $ymlLocation]), 'warning');
 
         return null;
       }
@@ -53,14 +70,14 @@ class CsvImporterHelper {
       // Put full structure in cache
       $cache->set('csv_importer_ymlFromCache', $structure);
 
-      drupal_set_message(t('CSV Importer: The structure YAML cache has been refreshed successfully.'));
+      self::log(t('CSV Importer: The structure YAML cache has been refreshed successfully.'));
 
       return $structure;
     }
     catch (ParseException $e) {
       CsvImporterHelper::flushYmlCache();
 
-      drupal_set_message(t('Unable to parse the structure YAML file: @s', $e->getMessage()), 'error');
+      self::log(t('Unable to parse the structure YAML file: @s', $e->getMessage()), 'error');
 
       return null;
     }
@@ -90,6 +107,39 @@ class CsvImporterHelper {
     }
 
     return false;
+  }
+
+  private static function log($message, $severity = 'status') {
+    switch (self::$logType) {
+      case self::LOG_DRUPAL_SET_MESSAGE:
+        drupal_set_message($message, $severity);
+        break;
+
+      case self::LOG_LOG_FACTORY:
+        self::logWithLoggerFactory($message, $severity);
+        break;
+
+      case self::LOG_DRUPAL_SET_MESSAGE_AND_LOGGER_FACTORY:
+        drupal_set_message($message, $severity);
+        self::logWithLoggerFactory($message, $severity);
+        break;
+    }
+  }
+  
+  private static function logWithLoggerFactory($message, $severity) {
+    switch($severity) {
+      case 'error':
+        \Drupal::logger('csv_importer')->error($message);
+        break;
+      
+      case 'warning':
+        \Drupal::logger('csv_importer')->warning($message);
+        break;
+      
+      default:
+        \Drupal::logger('csv_importer')->notice($message);
+        break;
+    }
   }
 
 }
