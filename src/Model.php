@@ -51,7 +51,7 @@ class Model {
    * Translated row fields names of the table to edit.
    * @var array
    */
-  public $rowFieldsNamesTranslated;
+  public $translatedFieldNames;
 
   /**
    * CSV file name.

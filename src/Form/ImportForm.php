@@ -241,7 +241,7 @@ class ImportForm extends FormBase {
 
         $previewTable = [
           '#type' => 'table',
-          '#header' => $translatedFieldNames
+          '#header' => $this->model->translatedFieldNames
         ];
 
         $previewTable['#rows'] = $data;
