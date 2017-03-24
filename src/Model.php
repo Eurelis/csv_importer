@@ -105,9 +105,21 @@ class Model {
 
   /**
    * Message for notice, error or warning.
-   * @var String 
+   * @var string 
    */
   public $message;
+
+  /**
+   * Contains the result values returned by the query.
+   * @var array 
+   */
+  public $result;
+
+  /**
+   * Count of the return values on retrieveContent() call.
+   * @var int
+   */
+  public $recordsCountInTable;
 
   /**
    * Contains values of an item from the structure.yml file.
@@ -123,7 +135,7 @@ class Model {
     }
 
     $this->modelName = $modelName;
-    
+
     if (!isset($structure[$this->modelName])) {
       $message = t('Unknown supplied model name. Model name was: @modelName', ['@modelName' => $modelName]);
       $this->initializationState = self::INIT_INVALID;
@@ -190,6 +202,54 @@ class Model {
     }
 
     $this->initializationState = self::INIT_VALID;
+  }
+
+  public function retrieveContent(Connection $connection) {
+    // Prevent uninitialized or invalid
+    if ($this->initializationState != Model::INIT_VALID) {
+      return;
+    }
+
+    if ($connection == null) {
+      $this->processingState = self::PROC_ERROR;
+      $this->message = t('No Connection object provided.');
+      return;
+    }
+
+    try {
+      // Select & count the entries
+      $query = $connection
+          ->select($this->tableName, 'x')
+          ->fields('x', $this->rowFieldsNames);
+
+      $this->recordsCountInTable = $query->countQuery()->execute()->fetchField();
+
+      if ($this->recordsCountInTable == 0) {
+        $this->processingState = self::PROC_SUCCESS;
+        $this->message = t('This table is empty');
+        return;
+      }
+
+      // Limitation for pager
+      $pagerLength = \Drupal::config('csv_importer.structureconfig')->get('records_display_default_length');
+      
+      if(!is_numeric($pagerLength) || $pagerLength <= 0) {
+        $pagerLength = 20;
+      }
+      
+      $tableSort = $query->extend('Drupal\Core\Database\Query\TableSortExtender')->orderByHeader($this->translatedFieldNames);
+      $pager = $tableSort->extend('Drupal\Core\Database\Query\PagerSelectExtender')->limit($pagerLength);
+      $this->result = $pager->execute();
+      
+      $this->processingState = self::PROC_SUCCESS;
+      $this->message = t('<p>There are @num records in this table.</p>', ['@num' => $this->recordsCountInTable]);
+      return;
+    }
+    catch (Exception $e) {
+      $this->processingState = self::PROC_ERROR;
+      $this->message = t('View of @modelName failed. Error message: @err_mess', ['@modelName' => $this->modelName, '@err_mess' => $e]);
+      return;
+    }
   }
 
   /**
@@ -355,7 +415,7 @@ class Model {
 
     try {
       // Purge
-      $query = $this->database->delete($this->tableName);
+      $query = $connection->delete($this->tableName);
 
       $entriesCount = $query->execute();
 

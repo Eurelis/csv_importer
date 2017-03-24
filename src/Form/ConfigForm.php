@@ -61,6 +61,13 @@ class ConfigForm extends ConfigFormBase {
       '#description' => $this->t('This value controls how many entries from a CSV file are rendered in the preview section when importing. A reasonable amount is 20.')
     ];
 
+    $form['records_display_default_length'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Records display default length'),
+      '#default_value' => $this->config('csv_importer.structureconfig')->get('records_display_default_length'),
+      '#description' => $this->t('This is the number of records displayed in the same page when viewing the contents of a model. The default value is 20.')
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -70,6 +77,16 @@ class ConfigForm extends ConfigFormBase {
   public function validateForm(array &$form, FormStateInterface $form_state) {
     if (!$this->validateNumericValue($form_state->getValue('preview_length'))) {
       $form_state->setErrorByName('preview_length', $this->t('The preview length value is not numeric.'));
+    }
+
+    $recordsDisplayDefaultLength = $form_state->getValue('records_display_default_length');
+
+    if ($this->validateNumericValue($recordsDisplayDefaultLength)) {
+      if ($recordsDisplayDefaultLength <= 0)
+        $form_state->setErrorByName('records_display_default_length', $this->t('The "records display default length" value cannot be less or equal to 0.'));
+    }
+    else {
+      $form_state->setErrorByName('records_display_default_length', $this->t('The "records display default length" value is not numeric.'));
     }
   }
 
@@ -81,6 +98,7 @@ class ConfigForm extends ConfigFormBase {
     $editableConfig->set('yml_location', $form_state->getValue('yml_location'));
     $editableConfig->set('csv_base_path', $form_state->getValue('csv_base_path'));
     $editableConfig->set('preview_length', $form_state->getValue('preview_length'));
+    $editableConfig->set('records_display_default_length', $form_state->getValue('records_display_default_length'));
 
     $editableConfig->save();
 

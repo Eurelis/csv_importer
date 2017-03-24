@@ -4,6 +4,7 @@ namespace Drupal\csv_importer\Controller;
 
 use Drupal;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\csv_importer\Model;
 use Drupal\Core\Database\Driver\mysql\Connection;
 use Drupal\Core\Routing\CurrentRouteMatch;
 use Drupal\csv_importer\CsvImporterHelper;
@@ -67,89 +68,73 @@ class ViewRecordsController extends ControllerBase {
 
     if (!in_array($this->modelName, array_keys($this->structure))) {
       drupal_set_message($this->t('Data model "@modelName" doesn\'t exist.', ['@modelName' => $this->modelName]), 'error');
+      return [];
     }
-    else {
-      $translatedFieldNames = [];
 
-      if (!isset($this->structure[$this->modelName]['structure_schema_version'])) {
-        $this->tableName = $this->modelName;
-        $this->rowFields = $this->structure[$this->modelName];
+    $model = new Model($this->structure, $this->modelName);
 
-        foreach ($this->rowFields as $field) {
-          $listing_fields_sql[] = $field;
-          $listing_fields_label[] = t($field);
+    switch ($model->initializationState) {
+      case Model::INIT_VALID:
+        break;
+
+      case Model::INIT_INVALID:
+        drupal_set_message($model->message, 'error');
+        return [];
+
+      default:
+        drupal_set_message(t('Unknown error occurred on Model initialization.'), 'error');
+        return [];
+    }
+
+    $model->retrieveContent($this->database);
+
+    switch ($model->processingState) {
+      case Model::PROC_SUCCESS:
+        if ($model->recordsCountInTable == 0) {
+          $build = [
+            '#markup' => $model->message
+          ];
+
+          return $build;
         }
-      }
-      else {
-        switch ($this->structure[$this->modelName]['structure_schema_version']) {
-          case '1':
-            $this->tableName = $this->structure[$this->modelName]['table_name'];
-            $this->rowFields = $this->structure[$this->modelName]['fields'];
 
-            foreach ($this->rowFields as $field) {
-              $listing_fields_sql[] = $field['name'];
-              $listing_fields_label[] = t($field['name']);
-            }
-            $this->csvFileName = $this->structure[$this->modelName]['csv_file_name'];
-            break;
+        // Prepare table header
+        $header = $model->translatedFieldNames;
 
-          default:
-            drupal_set_message($this->t('Unknown supplied structure_schema_version: "@version".', ['@version' => $this->structure[$this->modelName]['structure_schema_version']]), 'error');
-            return [];
+        $rows = [];
+
+        // Fill the data array with the data
+        foreach ($model->result as $row) {
+          $rows[] = ['data' => (array) $row];
         }
-      }
-      try {
-        // Select & count the entries
-        $query = $this->database
-            ->select($this->tableName, 'x')
-            ->fields('x', $listing_fields_sql);
 
-        $num = $query->countQuery()->execute()->fetchField();
+        // Init of the markup render array
+        $build = [
+          '#markup' => $model->message
+        ];
 
-        if ($num == 0) {
-          $build = array(
-            '#markup' => t('This table is empty')
-          );
-        }
-        else {
-          // Prepare table header
-          $header = $listing_fields_label;
+        // The table to render
+        $build['location_table'] = array(
+          '#theme' => 'table',
+          '#header' => $header,
+          '#rows' => $rows
+        );
 
-          // Limitation for pager
-          $table_sort = $query->extend('Drupal\Core\Database\Query\TableSortExtender')->orderByHeader($header);
-          $pager = $table_sort->extend('Drupal\Core\Database\Query\PagerSelectExtender')->limit(20);
-          $result = $pager->execute();
-          $rows = [];
+        // The pager
+        $build['pager'] = array(
+          '#type' => 'pager'
+        );
 
-          // Fill the array with the data
-          foreach ($result as $row) {
-            $rows[] = array('data' => (array) $row);
-          }
+        return $build;
 
-          // Init of the markup render array
-          $build = array(
-            '#markup' => t('<p> There are ' . $num . ' records in this table </p>')
-          );
-
-          // The table to render
-          $build['location_table'] = array(
-            '#theme' => 'table',
-            '#header' => $header,
-            '#rows' => $rows
-          );
-          // The pager
-          $build['pager'] = array(
-            '#type' => 'pager'
-          );
-        }
-      }
-      catch (Exception $e) {
-        drupal_set_message($this->t('View of @modelName failed. Error message: @err_mess', ['@modelName' => $this->modelName, '@err_mess' => $e]), 'error');
+      case Model::PROC_ERROR:
+        drupal_set_message($model->message, 'error');
         return new RedirectResponse(Drupal::url('csv_importer.home_controller_content'));
-      }
-    }
 
-    return $build;
+      default:
+        drupal_set_message(t('Unknown error occurred on Model processing.'), 'error');
+        return [];
+    }
   }
 
 }

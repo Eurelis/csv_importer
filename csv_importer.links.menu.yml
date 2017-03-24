@@ -1,12 +1,13 @@
-csv_importer.csv_importer.home_controller_content:
-  title: 'Csv Importer Menu'
+csv_importer.home_controller_content:
+  title: 'Csv Importer'
   route_name: csv_importer.home_controller_content
   description: 'Main Menu'
   parent: system.admin_config_system
   weight: 99
-csv_importer.csv_importer.config_form:
-  title: 'Csv Importer Config'
+  
+csv_importer.config_form:
+  title: 'Configuration'
   route_name: csv_importer.config_form
   description: 'Cnfiguration menu'
-  parent: system.admin_config_system
+  parent: csv_importer.home_controller_content
   weight: 99
