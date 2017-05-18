@@ -41,7 +41,10 @@ Don't forget to prepare the table before importing. The previous structure.yml s
 ```PHP
 <?php
 
-function csv_importer_schema() {
+/**
+ * Implements hook_schema().
+ */
+function your_module_schema() {
 
   $schema['commandes'] = array(
     'description' => 'Les commandes',
