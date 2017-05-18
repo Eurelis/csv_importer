@@ -1,0 +1,5 @@
+{
+    "name": "eurelis/csv_importer",
+    "description": "Imports CSV data into Drupal content.",
+    "type": "drupal-module"
+}
