@@ -180,8 +180,8 @@ class Model {
 
           $this->csvFileName = $structure[$this->modelName]['csv_file_name'];
 
-          if(isset($structure[$this->modelName]['startRowIndex'])) {
-            $this->startRowIndex = $structure[$this->modelName]['startRowIndex'];
+          if(isset($structure[$this->modelName]['start_row_index'])) {
+            $this->startRowIndex = $structure[$this->modelName]['start_row_index'];
           }
           else {
             $this->startRowIndex = 0;
