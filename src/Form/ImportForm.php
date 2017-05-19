@@ -138,6 +138,7 @@ class ImportForm extends FormBase {
 
       return $form;
     }
+
     if ($temp_file_id && $temp_file_id > -1) {
       $this->model = new Drupal\csv_importer\Model($this->structure, $this->modelName, $temp_file_id);
     }
@@ -202,6 +203,13 @@ class ImportForm extends FormBase {
       if ($handle = fopen($this->csvFullPath, 'r')) {
         $data = [];
         $processedRowsCount = 0;
+
+        // Skip the first rows if needed
+        for ($i = 0; $i < $this->model->startRowIndex; $i++) {
+          if (!(($row = fgetcsv($handle)) !== FALSE)) {
+            break;
+          }
+        }
 
         while (($row = fgetcsv($handle)) !== FALSE && $processedRowsCount < $previewLength) {
           $data[] = $row;

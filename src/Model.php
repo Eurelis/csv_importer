@@ -66,6 +66,12 @@ class Model {
   public $uniqueKeys;
 
   /**
+   * Indicates the start row index. Base 0. E.g: set to 1 to skip the first row.
+   * @var int
+   */
+  public $startRowIndex;
+
+  /**
    * File entity for temporary files uploads.
    * @var File
    */
@@ -144,6 +150,7 @@ class Model {
     }
 
     if (!isset($structure[$this->modelName]['structure_schema_version'])) {
+      // Legacy structure schema version
       $this->tableName = $this->modelName;
       $this->rowFields = $structure[$this->modelName];
 
@@ -157,6 +164,7 @@ class Model {
     else {
       switch ($structure[$this->modelName]['structure_schema_version']) {
         case '1':
+          // Main structure schema version
           $this->tableName = $structure[$this->modelName]['table_name'];
           $this->rowFields = $structure[$this->modelName]['fields'];
 
@@ -171,9 +179,18 @@ class Model {
           }
 
           $this->csvFileName = $structure[$this->modelName]['csv_file_name'];
+
+          if(isset($structure[$this->modelName]['startRowIndex'])) {
+            $this->startRowIndex = $structure[$this->modelName]['startRowIndex'];
+          }
+          else {
+            $this->startRowIndex = 0;
+          }
+
           break;
 
         default:
+          // Unknown structure schema version
           $message = t('Unknown supplied structure_schema_version: "@version".', ['@version' => $structure[$this->modelName]['structure_schema_version']]);
           $this->initializationState = self::INIT_INVALID;
           $this->message = $message;
@@ -323,6 +340,13 @@ class Model {
 
             // Stores params to bind as an associative array placeholder_id => $value
             $paramsToBind = [];
+
+            // Skip the first rows if needed
+            for($i = 0; $i < $this->startRowIndex; $i++) {
+              if (!(($row = fgetcsv($handle)) !== FALSE)) {
+                break;
+              }
+            }
 
             while ($currentValuesCount < 100) {
               if (!(($row = fgetcsv($handle)) !== FALSE)) {
