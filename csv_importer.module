@@ -7,5 +7,5 @@ function csv_importer_cron() {
   // Set CsvImporterHelper to not use drupal_set_message
   CsvImporterHelper::$logType = CsvImporterHelper::LOG_LOGGER_FACTORY; 
   
-  CsvImporterHelper::importAll();
+  CsvImporterHelper::importAllModels();
 }
