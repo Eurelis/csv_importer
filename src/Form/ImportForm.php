@@ -229,6 +229,9 @@ class ImportForm extends FormBase {
         }
 
         fclose($handle);
+        
+        // Remove skipped rows from total row count
+        $csvRowCount -= $this->model->startRowIndex;
 
         // Display data as table
         $form['import'] = [
