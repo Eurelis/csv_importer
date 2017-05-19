@@ -314,7 +314,7 @@ class Model {
         $fieldsNamesAsSqlList = '';
 
         foreach ($this->rowFieldsNames as $s) {
-          $fieldsNamesAsSqlList .= $s . ',';
+          $fieldsNamesAsSqlList .= '`' . $s . '`' . ',';
         }
 
         // No field to write in => nothing to do
