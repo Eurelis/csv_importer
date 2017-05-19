@@ -236,8 +236,13 @@ class Model {
     try {
       // Select & count the entries
       $query = $connection
-          ->select($this->tableName, 'x')
-          ->fields('x', $this->rowFieldsNames);
+          ->select($this->tableName, 'x');
+
+      foreach($this->rowFieldsNames as $rfn) {
+        // We use addField() instead of $query->fields() to be able to have
+        // SQL keywords as column names
+        $query->addField('x', $rfn, 'y_' . $rfn);
+      }
 
       $this->recordsCountInTable = $query->countQuery()->execute()->fetchField();
 
