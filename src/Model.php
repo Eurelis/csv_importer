@@ -6,6 +6,7 @@ use Drupal;
 use Drupal\Core\Database\Driver\mysql\Connection;
 use Drupal\file\Entity\File;
 use Exception;
+use PHPExcel_IOFactory;
 
 /**
  * Convenience class which stores data related to an item from the structure.yml file.
@@ -25,13 +26,13 @@ class Model {
 
   /**
    * Name of the model to edit.
-   * @var String
+   * @var string
    */
   public $modelName;
 
   /**
    * Name of the table to edit.
-   * @var String
+   * @var string
    */
   public $tableName;
 
@@ -55,7 +56,7 @@ class Model {
 
   /**
    * CSV file name.
-   * @var String
+   * @var string
    */
   public $csvFileName;
 
@@ -92,7 +93,7 @@ class Model {
    * - Model::INIT_INVALID
    * - Model::INIT_VALID
    * 
-   * @var String 
+   * @var string 
    */
   public $initializationState = self::INIT_UNINITIALIZED;
 
@@ -105,7 +106,7 @@ class Model {
    * - Model::PROC_WARNING
    * - Model::PROC_SUCCESS
    * 
-   * @var String 
+   * @var string 
    */
   public $processingState = self::PROC_UNPROCESSED;
 
@@ -180,7 +181,7 @@ class Model {
 
           $this->csvFileName = $structure[$this->modelName]['csv_file_name'];
 
-          if(isset($structure[$this->modelName]['start_row_index'])) {
+          if (isset($structure[$this->modelName]['start_row_index'])) {
             $this->startRowIndex = $structure[$this->modelName]['start_row_index'];
           }
           else {
@@ -238,7 +239,7 @@ class Model {
       $query = $connection
           ->select($this->tableName, 'x');
 
-      foreach($this->rowFieldsNames as $rfn) {
+      foreach ($this->rowFieldsNames as $rfn) {
         // We use addField() instead of $query->fields() to be able to have
         // SQL keywords as column names
         $query->addField('x', $rfn, 'y_' . $rfn);
@@ -254,15 +255,15 @@ class Model {
 
       // Limitation for pager
       $pagerLength = \Drupal::config('csv_importer.structureconfig')->get('records_display_default_length');
-      
-      if(!is_numeric($pagerLength) || $pagerLength <= 0) {
+
+      if (!is_numeric($pagerLength) || $pagerLength <= 0) {
         $pagerLength = 20;
       }
-      
+
       $tableSort = $query->extend('Drupal\Core\Database\Query\TableSortExtender')->orderByHeader($this->translatedFieldNames);
       $pager = $tableSort->extend('Drupal\Core\Database\Query\PagerSelectExtender')->limit($pagerLength);
       $this->result = $pager->execute();
-      
+
       $this->processingState = self::PROC_SUCCESS;
       $this->message = t('<p>There are @num records in this table.</p>', ['@num' => $this->recordsCountInTable]);
       return;
@@ -302,10 +303,13 @@ class Model {
     // Lock import
     $this->lockImport();
 
-    // Get CSV handle
+    // Load the file using PHPExcel
     $filePath = $this->getCsvFullPath();
 
-    if ($handle = fopen($filePath, 'r')) {
+    try {
+      $objPHPExcel = PHPExcel_IOFactory::load($filePath);
+      $objWorksheet = $objPHPExcel->getActiveSheet();
+
       $processedRowsCount = 0;
 
       // Transaction
@@ -331,6 +335,8 @@ class Model {
           // Remove last comma
           $fieldsNamesAsSqlList = rtrim($fieldsNamesAsSqlList, ',');
 
+          $rowIterator = $objWorksheet->getRowIterator($this->startRowIndex + 1);
+
           while (true) {
             // Query string to build
             $queryString = "INSERT INTO $this->tableName($fieldsNamesAsSqlList) VALUES";
@@ -346,23 +352,19 @@ class Model {
             // Stores params to bind as an associative array placeholder_id => $value
             $paramsToBind = [];
 
-            // Skip the first rows if needed
-            for($i = 0; $i < $this->startRowIndex; $i++) {
-              if (!(($row = fgetcsv($handle)) !== FALSE)) {
-                break;
-              }
-            }
+            while ($currentValuesCount < 100 && $rowIterator->valid()) {
+              $row = $rowIterator->current();
 
-            while ($currentValuesCount < 100) {
-              if (!(($row = fgetcsv($handle)) !== FALSE)) {
-                break;
-              }
+              $cellIterator = $row->getCellIterator();
+
+              // Empty cells have to be kept
+              $cellIterator->setIterateOnlyExistingCells(false);
 
               $queryString .= '(';
 
-              foreach ($row as $v) {
+              foreach ($cellIterator as $cell) {
                 $queryString .= ':ph_' . $processedRowsCount . '_' . $currentParamCount . ',';
-                $paramsToBind[':ph_' . $processedRowsCount . '_' . $currentParamCount] = $v;
+                $paramsToBind[':ph_' . $processedRowsCount . '_' . $currentParamCount] = $cell->getValue();
                 $currentParamCount++;
               }
 
@@ -373,6 +375,8 @@ class Model {
               $currentValuesCount++;
 
               $processedRowsCount++;
+
+              $rowIterator->next();
             }
 
             // Break if no value is added
@@ -424,8 +428,9 @@ class Model {
         $this->processingState = self::PROC_ERROR;
         $this->message = $message;
       }
-
-      fclose($handle);
+    }
+    catch (Exception $e) {
+      // Nothing to do
     }
 
     // Unlock

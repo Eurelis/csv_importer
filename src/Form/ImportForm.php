@@ -12,6 +12,8 @@ use Drupal\Core\Session\AccountProxy;
 use Drupal\Core\Url;
 use Drupal\csv_importer\CsvImporterHelper;
 use Drupal\csv_importer\Model;
+use Exception;
+use PHPExcel_IOFactory;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -55,13 +57,13 @@ class ImportForm extends FormBase {
 
   /**
    * Name of the model to edit.
-   * @var String
+   * @var string
    */
   private $modelName;
 
   /**
    * CSV full path.
-   * @var String
+   * @var string
    */
   private $csvFullPath;
 
@@ -183,7 +185,7 @@ class ImportForm extends FormBase {
       // Get CSV full path
       $this->csvFullPath = $this->model->getCsvFullPath();
 
-      if ($this->csvFullPath === FALSE) {
+      if ($this->csvFullPath === false) {
         $form[] = [
           '#markup' => '<p>' . $this->t('CSV file not found on the server.') . '</p>'
         ];
@@ -200,36 +202,36 @@ class ImportForm extends FormBase {
         drupal_set_message($this->t('Couldn\'t retrieve preview_length config variable. Previewing @previewLength values.', ['@previewLength' => $previewLength]));
       }
 
-      if ($handle = fopen($this->csvFullPath, 'r')) {
+      try {
+        $objPHPExcel = PHPExcel_IOFactory::load($this->csvFullPath);
+        $objWorksheet = $objPHPExcel->getActiveSheet();
+
         $data = [];
         $processedRowsCount = 0;
 
-        // Skip the first rows if needed
-        for ($i = 0; $i < $this->model->startRowIndex; $i++) {
-          if (!(($row = fgetcsv($handle)) !== FALSE)) {
-            break;
-          }
-        }
+        $rowIterator = $objWorksheet->getRowIterator($this->model->startRowIndex + 1);
 
-        while (($row = fgetcsv($handle)) !== FALSE && $processedRowsCount < $previewLength) {
+        while ($rowIterator->valid() && $processedRowsCount < $previewLength) {
+          $rowObj = $rowIterator->current();
+          $cellIterator = $rowObj->getCellIterator();
+
+          // Empty cells have to be kept
+          $cellIterator->setIterateOnlyExistingCells(false);
+
+          foreach ($cellIterator as $cid => $cell) {
+            $row[] = $cell;
+          }
+
           $data[] = $row;
 
           $processedRowsCount++;
+
+          $rowIterator->next();
         }
 
         // CSV total row count
-        $csvRowCount = 1;
+        $csvRowCount = $objWorksheet->getHighestRow();
 
-        // Rewind the pointer
-        rewind($handle);
-
-        while (!feof($handle)) {
-          $chunk = fgets($handle, 4096);
-          $csvRowCount += substr_count($chunk, PHP_EOL);
-        }
-
-        fclose($handle);
-        
         // Remove skipped rows from total row count
         $csvRowCount -= $this->model->startRowIndex;
 
@@ -257,7 +259,7 @@ class ImportForm extends FormBase {
 
         $previewTable['#rows'] = $data;
       }
-      else {
+      catch (Exception $e) {
         $form[] = [
           '#markup' => '<p>' . $this->t('Couldn\'t open this file: <em>@csvFullPath</em>', ['@csvFullPath' => $this->csvFullPath]) . '</p>'
         ];
